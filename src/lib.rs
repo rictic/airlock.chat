@@ -9,16 +9,8 @@ use wasm_bindgen::JsCast;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[wasm_bindgen]
-extern "C" {
-    fn alert(s: &str);
-}
-
-#[wasm_bindgen]
-pub fn greet() -> String {
-    "Hello rust-us".into()
-}
-
+// These params describe whether the player is currently holding down each
+// of the buttons.
 #[wasm_bindgen]
 pub fn draw(up: bool, _down: bool, _left: bool, _right: bool) -> Option<bool> {
     let document = web_sys::window().unwrap().document()?;

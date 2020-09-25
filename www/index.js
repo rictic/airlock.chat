@@ -41,7 +41,6 @@ document.addEventListener('keyup', (ev) => {
 });
 
 const output = document.createElement('div');
-output.innerText = wasm.greet();
 document.body.appendChild(output);
 
 const canvas = document.createElement('canvas');

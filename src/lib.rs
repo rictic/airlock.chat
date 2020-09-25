@@ -2,7 +2,6 @@ mod utils;
 use std::f64;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -11,7 +10,7 @@ use wasm_bindgen::prelude::*;
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-extern {
+extern "C" {
     fn alert(s: &str);
 }
 
@@ -21,43 +20,48 @@ pub fn greet() -> String {
 }
 
 #[wasm_bindgen]
-pub fn draw() {
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .map_err(|_| ())
-        .unwrap();
+pub fn draw(up: bool, _down: bool, _left: bool, _right: bool) -> Option<bool> {
+    let document = web_sys::window().unwrap().document()?;
+    let canvas = document.get_element_by_id("canvas")?;
+    let canvas: web_sys::HtmlCanvasElement =
+        canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok()?;
 
     let context = canvas
         .get_context("2d")
-        .unwrap()
-        .unwrap()
+        .ok()??
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .unwrap();
+        .ok()?;
+
+    context.clear_rect(0.0, 0.0, canvas.width().into(), canvas.height().into());
+
+    if !up {
+        return Some(true);
+    }
 
     context.begin_path();
 
     // Draw the outer circle.
     context
         .arc(75.0, 75.0, 50.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
+        .ok()?;
 
     // Draw the mouth.
     context.move_to(110.0, 75.0);
-    context.arc(75.0, 75.0, 35.0, 0.0, f64::consts::PI).unwrap();
+    context.arc(75.0, 75.0, 35.0, 0.0, f64::consts::PI).ok()?;
 
     // Draw the left eye.
     context.move_to(65.0, 65.0);
     context
         .arc(60.0, 65.0, 5.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
+        .ok()?;
 
     // Draw the right eye.
     context.move_to(95.0, 65.0);
     context
         .arc(90.0, 65.0, 5.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
+        .ok()?;
 
     context.stroke();
+
+    Some(true)
 }

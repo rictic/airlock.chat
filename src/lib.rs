@@ -14,6 +14,6 @@ extern {
 }
 
 #[wasm_bindgen]
-pub fn greet() {
-    alert("Hello! rust-us!?");
+pub fn greet() -> String {
+    "Hello rust-us".into()
 }

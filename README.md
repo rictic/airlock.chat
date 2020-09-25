@@ -5,8 +5,8 @@
 3. [install wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
 4. clone this repo
 5. cd rust-us
-6. Build the rust and start our local web server: `(wasm-pack build && cd www && npm install && npm run start) &`
-7. once you see `ℹ ｢wdm｣: Compiled successfully.`, navigate to http://localhost:8080/
+6. ./start.sh
+7. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
 
 This will leave the server running as a background bash job, so your terminal is still free.
 

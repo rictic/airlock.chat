@@ -1,3 +1,5 @@
 import * as wasm from "rust-us";
 
-wasm.greet();
+const output = document.createElement('div');
+output.innerText = wasm.greet();
+document.body.appendChild(output);

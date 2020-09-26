@@ -20,7 +20,7 @@ impl Game {
     // These params describe whether the player is currently holding down each
     // of the buttons.
     pub fn draw(&mut self, up: bool, down: bool, left: bool, right: bool) -> Option<bool> {
-        let document = web_sys::window().unwrap().document()?;
+        let document = web_sys::window()?.document()?;
         let canvas = document.get_element_by_id("canvas")?;
         let canvas: web_sys::HtmlCanvasElement =
             canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok()?;

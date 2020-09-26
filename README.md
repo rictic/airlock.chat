@@ -3,14 +3,13 @@
 1. [install the rust toolchain](https://www.rust-lang.org/tools/install)
 2. [install npm](https://www.npmjs.com/get-npm)
 3. [install wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
-4. clone this repo
-5. cd rust-us
-6. ./start.sh
-7. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
+4. install gcc using `apt-get install gcc`
+5. clone this repo
+6. cd rust-us
+7. ./start.sh
+8. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
 
-This will leave the server running as a background bash job, so your terminal is still free.
-
-You can now change the rust code in `./src/` and run `wasm-pack build` to incrementally rebuild the wasm code. If you're lucky, your web browser will automatically reload as well.
+This will also automatically watch the rust code in `./src/` and incrementally rebuild on changes. If you're lucky, your web browser will also automatically reload after a successful build.
 
 ## Based off of wasm-pack-template
 

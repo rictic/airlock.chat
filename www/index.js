@@ -46,14 +46,16 @@ document.body.appendChild(output);
 const canvas = document.createElement('canvas');
 canvas.id = 'canvas';
 document.body.appendChild(canvas);
-function main() {
-  const result = wasm.draw(
+
+const game = wasm.make_game()
+function drawOneFrame() {
+  const result = game.draw(
       curInput.up, curInput.down, curInput.left, curInput.right);
   if (result == null) {
     output.innerText = 'Failed to draw!';
   } else {
-    output.innerText = 'All is well. (hold up for smile)';
+    output.innerText = 'All is well.';
   }
-  requestAnimationFrame(main);
+  requestAnimationFrame(drawOneFrame);
 }
-requestAnimationFrame(main);
+requestAnimationFrame(drawOneFrame);

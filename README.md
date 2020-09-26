@@ -4,11 +4,10 @@
 2. [install npm](https://www.npmjs.com/get-npm)
 3. [install wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
 4. install gcc using `apt-get install gcc`
-5. install webpack-dev-server using `npm install webpack -g`
-6. clone this repo
-7. cd rust-us
-8. ./start.sh
-9. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
+5. clone this repo
+6. cd rust-us
+7. ./start.sh
+8. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
 
 This will leave the server running as a background bash job, so your terminal is still free.
 

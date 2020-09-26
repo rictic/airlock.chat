@@ -9,9 +9,7 @@
 7. ./start.sh
 8. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
 
-This will leave the server running as a background bash job, so your terminal is still free.
-
-You can now change the rust code in `./src/` and run `wasm-pack build` to incrementally rebuild the wasm code. If you're lucky, your web browser will automatically reload as well.
+This will also automatically watch the rust code in `./src/` and incrementally rebuild on changes. If you're lucky, your web browser will also automatically reload after a successful build.
 
 ## Based off of wasm-pack-template
 

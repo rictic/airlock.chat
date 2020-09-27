@@ -54,14 +54,7 @@ const drawTimes = [];
 const totalTimes = [];
 let perfIdx = 0;
 
-const maybeGame = wasm.make_game();
-if (maybeGame.get_error()) {
-  throw new Error(maybeGame.get_error());
-}
-const game = maybeGame.get_game();
-if (!game) {
-  throw new Error(`Failed to make a Game object`);
-}
+const game = wasm.make_game();
 let previousFrameTime = performance.now();
 function drawOneFrame() {
   const timestamp = performance.now();

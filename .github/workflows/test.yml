@@ -19,3 +19,5 @@ jobs:
       run: wasm-pack test --headless --chrome
     - name: Test Firefox
       run: wasm-pack test --headless --firefox
+    - name: Run server tests
+      run: (cd server && cargo test)

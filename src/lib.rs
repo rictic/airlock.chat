@@ -220,25 +220,6 @@ fn get_canvas_info() -> Result<CanvasInfo, Box<dyn Error>> {
     })
 }
 
-// This is a poor substitute for a Result<Game, String> doesn't want
-// to be passed from wasm to JS for some reason.
-#[wasm_bindgen]
-pub struct MakeGameResult {
-    game: Option<Game>,
-    error: Option<String>,
-}
-
-#[wasm_bindgen]
-impl MakeGameResult {
-    pub fn get_game(&self) -> Option<Game> {
-        self.game.clone()
-    }
-
-    pub fn get_error(&self) -> Option<String> {
-        self.error.clone()
-    }
-}
-
 fn make_player(color: Color) -> Player {
     Player {
         color,
@@ -248,7 +229,7 @@ fn make_player(color: Color) -> Player {
 }
 
 #[wasm_bindgen]
-pub fn make_game() -> MakeGameResult {
+pub fn make_game() -> Result<Game, JsValue> {
     let mut players = vec![
         make_player(Color::Red),
         make_player(Color::Pink),
@@ -263,25 +244,18 @@ pub fn make_game() -> MakeGameResult {
         player.x = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin());
         player.y = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos());
     }
-    match get_canvas_info() {
-        Ok(CanvasInfo {
-            context,
-            width,
-            height,
-        }) => MakeGameResult {
-            game: Some(Game {
-                speed: 2.0,
-                context,
-                width,
-                height,
-                local_player_color: Some(Color::random()),
-                players,
-            }),
-            error: None,
-        },
-        Err(e) => MakeGameResult {
-            game: None,
-            error: Some(format!("Error: {}", e)),
-        },
-    }
+    let CanvasInfo {
+        context,
+        width,
+        height,
+    } = get_canvas_info()
+        .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
+    Ok(Game {
+        speed: 2.0,
+        context,
+        width,
+        height,
+        local_player_color: Some(Color::random()),
+        players,
+    })
 }

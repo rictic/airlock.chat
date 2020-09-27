@@ -44,6 +44,8 @@ const output = document.createElement('div');
 document.body.appendChild(output);
 
 const canvas = document.createElement('canvas');
+canvas.width = 1024;
+canvas.height = 768;
 canvas.id = 'canvas';
 document.body.appendChild(canvas);
 

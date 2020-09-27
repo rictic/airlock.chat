@@ -5,3 +5,6 @@ bin/
 pkg/
 wasm-pack.log
 /www/node_modules
+
+/server/target/
+/server/Cargo.lock

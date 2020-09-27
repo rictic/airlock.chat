@@ -40,9 +40,16 @@ wasm-opt = false
 [dependencies.web-sys]
 version = "0.3.4"
 features = [
+  'BinaryType',
+  'Blob',
   'CanvasRenderingContext2d',
   'Document',
   'Element',
+  'ErrorEvent',
+  'FileReader',
   'HtmlCanvasElement',
+  'MessageEvent',
+  'ProgressEvent',
+  'WebSocket',
   'Window',
 ]

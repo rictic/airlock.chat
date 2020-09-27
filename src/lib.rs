@@ -64,6 +64,7 @@ pub struct Player {
     x: f64,
     y: f64,
     dead: bool,
+    inputs: InputState,
 }
 
 #[wasm_bindgen]
@@ -136,7 +137,7 @@ impl Game {
         Ok(())
     }
 
-    fn simulate_internal(&mut self, elapsed: f64, inputs: InputState) -> Result<(), &'static str> {
+    fn simulate_internal(&mut self, elapsed: f64) -> Result<(), &'static str> {
         // elapsed is the time, in milliseconds, that has passed since the
         // last time we simulated.
         // By making our simulations relative to the amount of time that's passed,
@@ -154,9 +155,9 @@ impl Game {
             if player.color != local_player_color {
                 continue;
             }
-
+            let inputs = player.inputs;
             if inputs.up {
-                player.y -= self.speed * time_steps_passed + 1.0
+                player.y -= self.speed * time_steps_passed
             }
             if inputs.down {
                 player.y += self.speed * time_steps_passed
@@ -219,29 +220,36 @@ impl Game {
         }
     }
 
-    pub fn simulate(
-        &mut self,
-        elapsed: f64,
-        up: bool,
-        down: bool,
-        left: bool,
-        right: bool,
-        q: bool,
-    ) -> Option<String> {
-        let next_input = InputState {
+    fn local_player(&mut self) -> Option<&mut Player> {
+        let local_player_color = self.local_player_color?;
+        for player in self.players.iter_mut() {
+            if player.color == local_player_color {
+                return Some(player);
+            }
+        }
+        None
+    }
+
+    pub fn simulate(&mut self, elapsed: f64) -> Option<String> {
+        let result = self.simulate_internal(elapsed);
+        match result {
+            Ok(()) => None,
+            Err(s) => Some(s.to_string()),
+        }
+    }
+
+    pub fn set_inputs(&mut self, up: bool, down: bool, left: bool, right: bool, q: bool) {
+        let player = match self.local_player() {
+            None => return,
+            Some(p) => p,
+        };
+        player.inputs = InputState {
             up,
             down,
             left,
             right,
             q,
         };
-
-        let result = self.simulate_internal(elapsed, next_input);
-
-        match result {
-            Ok(()) => None,
-            Err(s) => Some(s.to_string()),
-        }
     }
 }
 
@@ -285,6 +293,13 @@ fn make_player(color: Color) -> Player {
         dead: false,
         x: 0.0,
         y: 0.0,
+        inputs: InputState {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            q: false,
+        },
     }
 }
 

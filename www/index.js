@@ -1,57 +1,5 @@
 import * as wasm from 'rust-us';
 
-const curInput = {
-  up: false,
-  down: false,
-  left: false,
-  right: false,
-  q: false,
-};
-
-document.addEventListener('keydown', (ev) => {
-  switch (ev.key) {
-    case 'ArrowUp':
-      curInput.up = true;
-      break;
-    case 'ArrowDown':
-      curInput.down = true;
-      break;
-    case 'ArrowLeft':
-      curInput.left = true;
-      break;
-    case 'ArrowRight':
-      curInput.right = true;
-      break;
-    case 'q':
-    case 'Q':
-      curInput.q = true;
-      break;
-  }
-
-  // Stop keys from doing things like changing scroll bars
-  // and filling out inputs:
-  ev.preventDefault();
-});
-document.addEventListener('keyup', (ev) => {
-  switch (ev.key) {
-    case 'ArrowUp':
-      curInput.up = false;
-      break;
-    case 'ArrowDown':
-      curInput.down = false;
-      break;
-    case 'ArrowLeft':
-      curInput.left = false;
-      break;
-    case 'ArrowRight':
-      curInput.right = false;
-      break;
-    case 'q':
-      curInput.q = false;
-      break;
-  }
-});
-
 const output = document.createElement('div');
 document.body.appendChild(output);
 
@@ -72,14 +20,7 @@ function drawOneFrame() {
   const timestamp = performance.now();
   const elapsed = timestamp - previousFrameTime;
   previousFrameTime = timestamp;
-  const simError = game.simulate(
-    elapsed,
-    curInput.up,
-    curInput.down,
-    curInput.left,
-    curInput.right,
-    curInput.q
-  );
+  const simError = game.simulate(elapsed);
   const afterSim = performance.now();
   const simTime = afterSim - timestamp;
   const drawError = game.draw();
@@ -114,6 +55,8 @@ function drawOneFrame() {
   output.innerText = message;
   requestAnimationFrame(drawOneFrame);
 }
+requestAnimationFrame(drawOneFrame);
+
 function average(arr) {
   let sum = 0;
   for (const val of arr) {
@@ -122,4 +65,31 @@ function average(arr) {
   return sum / arr.length;
 }
 
-requestAnimationFrame(drawOneFrame);
+const knownButtons = new Set(
+  ['w', 'a', 's', 'd', 'q', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+const heldButtons = {};
+function updateInput() {
+  const up = heldButtons['w'] || heldButtons['arrowup'];
+  const down = heldButtons['s'] || heldButtons['arrowdown'];
+  const left = heldButtons['a'] || heldButtons['arrowleft'];
+  const right = heldButtons['d'] || heldButtons['arrowright'];
+  const q = heldButtons['q'];
+  game.set_inputs(up, down, left, right, q);
+}
+document.addEventListener('keydown', (ev) => {
+  const key = ev.key.toLowerCase();
+  if (!knownButtons.has(key)) {
+    return;
+  }
+  heldButtons[ev.key.toLowerCase()] = true;
+  updateInput();
+  ev.preventDefault();
+});
+document.addEventListener('keyup', (ev) => {
+  const key = ev.key.toLowerCase();
+  if (!knownButtons.has(key)) {
+    return;
+  }
+  heldButtons[key] = false;
+  updateInput();
+});

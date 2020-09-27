@@ -52,6 +52,7 @@ pub struct Player {
     color: Color,
     x: f64,
     y: f64,
+    dead: bool,
 }
 
 #[wasm_bindgen]
@@ -60,7 +61,9 @@ pub struct Game {
     speed: f64,
     width: f64,
     height: f64,
+    kill_distance: f64,
     local_player_color: Option<Color>,
+    last_input: InputState,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
 }
@@ -74,6 +77,7 @@ pub struct InputState {
     pub down: bool,
     pub left: bool,
     pub right: bool,
+    pub q: bool,
 }
 
 #[wasm_bindgen]
@@ -91,7 +95,9 @@ impl Game {
         self.circle(275.0, 275.0, 75.0)?;
 
         for player in self.players.iter() {
-            self.draw_player(player)?
+            if !player.dead {
+                self.draw_player(player)?
+            }
         }
 
         Ok(())
@@ -127,12 +133,15 @@ impl Game {
         // the game will progress the same regardless of the frame rate, which may
         // vary between 30fps and 144fps even if our performance is perfect!
         let time_steps_passed = elapsed / 16.0;
-        let local_plyaer_color = match &self.local_player_color {
+        let local_player_color = match &self.local_player_color {
             None => return Ok(()), // not controlling anything
             Some(c) => *c,
         };
+
+        let mut kill_position: Option<(f64, f64)> = None;
+
         for player in self.players.iter_mut() {
-            if player.color != local_plyaer_color {
+            if player.color != local_player_color {
                 continue;
             }
 
@@ -147,6 +156,39 @@ impl Game {
             }
             if inputs.right {
                 player.x += self.speed * time_steps_passed
+            }
+
+            if !inputs.q && self.last_input.q {
+                kill_position = Some((player.x, player.y));
+            }
+        }
+
+        match kill_position {
+            Some(position) => self.kill_player_near(position)?,
+            None => return Ok(()),
+        }
+
+        Ok(())
+    }
+
+    fn kill_player_near(&mut self, position: (f64, f64)) -> Result<(), &'static str> {
+        let local_player_color = match &self.local_player_color {
+            None => return Ok(()), // not controlling anything
+            Some(c) => *c,
+        };
+
+        for player in self.players.iter_mut() {
+            if player.color == local_player_color {
+                continue;
+            }
+
+            let distance = ((position.0 - player.x).powi(2) + (position.1 - player.y).powi(2))
+                .sqrt()
+                .abs();
+
+            if distance < self.kill_distance {
+                player.dead = true;
+                break;
             }
         }
 
@@ -169,16 +211,20 @@ impl Game {
         down: bool,
         left: bool,
         right: bool,
+        q: bool,
     ) -> Option<String> {
-        let result = self.simulate_internal(
-            elapsed,
-            InputState {
-                up,
-                down,
-                left,
-                right,
-            },
-        );
+        let next_input = InputState {
+            up,
+            down,
+            left,
+            right,
+            q,
+        };
+
+        let result = self.simulate_internal(elapsed, next_input);
+
+        self.last_input = next_input;
+
         match result {
             Ok(()) => None,
             Err(s) => Some(s.to_string()),
@@ -223,6 +269,7 @@ fn get_canvas_info() -> Result<CanvasInfo, Box<dyn Error>> {
 fn make_player(color: Color) -> Player {
     Player {
         color,
+        dead: false,
         x: 0.0,
         y: 0.0,
     }
@@ -255,7 +302,15 @@ pub fn make_game() -> Result<Game, JsValue> {
         context,
         width,
         height,
+        kill_distance: 64.0,
         local_player_color: Some(Color::random()),
+        last_input: InputState {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            q: false,
+        },
         players,
     })
 }

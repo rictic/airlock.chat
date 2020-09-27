@@ -1,11 +1,12 @@
-import * as wasm from "rust-us";
+import * as wasm from 'rust-us';
 
 const curInput = {
   up: false,
   down: false,
   left: false,
-  right: false
-}
+  right: false,
+  q: false,
+};
 
 document.addEventListener('keydown', (ev) => {
   switch (ev.key) {
@@ -21,7 +22,14 @@ document.addEventListener('keydown', (ev) => {
     case 'ArrowRight':
       curInput.right = true;
       break;
+    case 'q':
+      curInput.q = true;
+      break;
   }
+
+  // Stop keys from doing things like changing scroll bars
+  // and filling out inputs:
+  ev.preventDefault();
 });
 document.addEventListener('keyup', (ev) => {
   switch (ev.key) {
@@ -36,6 +44,9 @@ document.addEventListener('keyup', (ev) => {
       break;
     case 'ArrowRight':
       curInput.right = false;
+      break;
+    case 'q':
+      curInput.q = false;
       break;
   }
 });
@@ -61,7 +72,13 @@ function drawOneFrame() {
   const elapsed = timestamp - previousFrameTime;
   previousFrameTime = timestamp;
   const simError = game.simulate(
-      elapsed, curInput.up, curInput.down, curInput.left, curInput.right);
+    elapsed,
+    curInput.up,
+    curInput.down,
+    curInput.left,
+    curInput.right,
+    curInput.q
+  );
   const afterSim = performance.now();
   const simTime = afterSim - timestamp;
   const drawError = game.draw();
@@ -92,7 +109,7 @@ function drawOneFrame() {
   }
   message += ` – ${average(simTimes).toFixed(1)}ms sim`;
   message += ` – ${average(drawTimes).toFixed(1)}ms draw`;
-  message += ` – ${((1000/average(totalTimes)).toFixed(1))}fps`;
+  message += ` – ${(1000 / average(totalTimes)).toFixed(1)}fps`;
   output.innerText = message;
   requestAnimationFrame(drawOneFrame);
 }

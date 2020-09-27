@@ -293,6 +293,12 @@ pub fn start_websocket() -> Result<(), JsValue> {
     ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
     onerror_callback.forget();
 
+    let onclose_callback = Closure::wrap(Box::new(move |_| {
+        console_log!("websocket closed");
+    }) as Box<dyn FnMut(ErrorEvent)>);
+    ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
+    onclose_callback.forget();
+
     let cloned_ws = ws.clone();
     let onopen_callback = Closure::wrap(Box::new(move |_| {
         console_log!("socket opened");

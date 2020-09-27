@@ -1,3 +1,6 @@
+# When this shell script exits, kill all child jobs.
+trap 'echo $(jobs -p)' EXIT
+
 if test -d "www/node_modules"; then
   echo 'skipping npm install'
 else

@@ -1,4 +1,5 @@
 mod utils;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::f64;
 use wasm_bindgen::prelude::*;
@@ -21,7 +22,7 @@ extern "C" {
     fn log(s: &str);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Color {
     Red,
     Pink,
@@ -77,12 +78,13 @@ pub struct Game {
     local_player_color: Option<Color>,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
+    socket: WebSocket,
 }
 
 // The state of user input at some point in time. i.e. what buttons is
 // the user holding down?
 #[wasm_bindgen]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputState {
     pub up: bool,
     pub down: bool,
@@ -256,6 +258,9 @@ impl Game {
             right,
             q,
         };
+        if new_input == player.inputs {
+            return Ok(()); // quick exit for the boring case
+        }
         // Read the parts of the local player that we care about.
         let is_killing = !player.inputs.q && new_input.q;
         let position = (player.x, player.y);
@@ -264,12 +269,12 @@ impl Game {
 
         // Now that we don't reference player any longer, the borrow checker
         // is ok with us mutating self.
-        let mut kill_pos: Option<(f64, f64)> = None;
+        let mut kill_info: Option<(f64, f64, Color)> = None;
         if is_killing {
             // local player just hit the q button
             let dead_player = self.kill_player_near(position).map_err(JsValue::from)?;
             if let Some(dead_player) = dead_player {
-                kill_pos = Some((dead_player.x, dead_player.y));
+                kill_info = Some((dead_player.x, dead_player.y, dead_player.color));
             }
             // this is also a good time to broadcast the kill
         }
@@ -278,10 +283,30 @@ impl Game {
             .local_player_mut()
             .ok_or_else(|| JsValue::from("Did player kill themselves?"))?;
         player.inputs = new_input;
-        if let Some((x, y)) = kill_pos {
+        if let Some((x, y, _)) = kill_info {
             player.x = x;
             player.y = y;
         }
+        // Ok now we're done mutating player, get an immutable reference.
+        // There _has_ to be a better way to do this though lol.
+        // We've walked the vec of players three times now!
+        let player: &Player = self.local_player().unwrap();
+        if let Some((_, _, color)) = kill_info {
+            self.send_msg(&Message::Killed(color))?;
+        }
+        self.send_msg(&Message::Move(MoveMessage {
+            color: player.color,
+            inputs: player.inputs,
+            current_x: player.x,
+            current_y: player.y,
+        }))?;
+        Ok(())
+    }
+
+    fn send_msg(&self, message: &Message) -> Result<(), JsValue> {
+        let encoded = serde_json::to_string(message)
+            .map_err(|_| JsValue::from_str("Unable to encode Message to json"))?;
+        self.socket.send_with_str(&encoded)?;
         Ok(())
     }
 }
@@ -338,7 +363,6 @@ fn make_player(color: Color) -> Player {
 
 #[wasm_bindgen]
 pub fn make_game() -> Result<Game, JsValue> {
-    start_websocket()?;
     let mut players = vec![
         make_player(Color::Red),
         make_player(Color::Pink),
@@ -359,7 +383,8 @@ pub fn make_game() -> Result<Game, JsValue> {
         height,
     } = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
-    Ok(Game {
+    let ws = WebSocket::new("ws://localhost:3012")?;
+    let game = Game {
         speed: 2.0,
         context,
         width,
@@ -367,37 +392,47 @@ pub fn make_game() -> Result<Game, JsValue> {
         kill_distance: 64.0,
         local_player_color: Some(Color::random()),
         players,
-    })
-}
+        socket: ws,
+    };
 
-pub fn start_websocket() -> Result<(), JsValue> {
-    let ws = WebSocket::new("ws://localhost:3012")?;
     let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
         // Starting with assuming text messages. Can make efficient later (bson?).
         if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
-            console_log!("message from network: {:?}", txt);
+            let strng: String = txt.into();
+            let message: Message = match serde_json::from_str(&strng) {
+                Ok(m) => m,
+                Err(e) => {
+                    console_log!("Unable to deserialize {:?} – {:?}", strng, e);
+                    return;
+                }
+            };
+            console_log!("message from network: {:?}", message);
+        // game.handle_msg(&message);
         } else {
             console_log!("non-string message received! {:?}", e.data());
         }
     }) as Box<dyn FnMut(MessageEvent)>);
     // set message event handler on WebSocket
-    ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+    game.socket
+        .set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
     // forget the callback to keep it alive
     onmessage_callback.forget();
 
     let onerror_callback = Closure::wrap(Box::new(move |e: ErrorEvent| {
         console_log!("error event on websocket: {:?}", e);
     }) as Box<dyn FnMut(ErrorEvent)>);
-    ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
+    game.socket
+        .set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
     onerror_callback.forget();
 
     let onclose_callback = Closure::wrap(Box::new(move |_| {
         console_log!("websocket closed");
     }) as Box<dyn FnMut(ErrorEvent)>);
-    ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
+    game.socket
+        .set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
     onclose_callback.forget();
 
-    let cloned_ws = ws.clone();
+    let cloned_ws = game.socket.clone();
     let onopen_callback = Closure::wrap(Box::new(move |_| {
         console_log!("socket opened");
         match cloned_ws.send_with_str("ping") {
@@ -405,8 +440,23 @@ pub fn start_websocket() -> Result<(), JsValue> {
             Err(err) => console_log!("error sending message: {:?}", err),
         }
     }) as Box<dyn FnMut(JsValue)>);
-    ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+    game.socket
+        .set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
     onopen_callback.forget();
 
-    Ok(())
+    Ok(game)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Message {
+    Move(MoveMessage),
+    Killed(Color),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct MoveMessage {
+    color: Color,
+    inputs: InputState,
+    current_x: f64,
+    current_y: f64,
 }

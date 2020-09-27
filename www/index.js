@@ -49,6 +49,11 @@ canvas.height = 768;
 canvas.id = 'canvas';
 document.body.appendChild(canvas);
 
+const simTimes = [];
+const drawTimes = [];
+const totalTimes = [];
+let perfIdx = 0;
+
 const maybeGame = wasm.make_game();
 if (maybeGame.get_error()) {
   throw new Error(maybeGame.get_error());
@@ -58,19 +63,52 @@ if (!game) {
   throw new Error(`Failed to make a Game object`);
 }
 let previousFrameTime = performance.now();
-function drawOneFrame(timestamp) {
+function drawOneFrame() {
+  const timestamp = performance.now();
   const elapsed = timestamp - previousFrameTime;
   previousFrameTime = timestamp;
-  game.simulate(
+  const simError = game.simulate(
       elapsed, curInput.up, curInput.down, curInput.left, curInput.right);
-  game.draw()
-  const maybeError = game.draw(
-      curInput.up, curInput.down, curInput.left, curInput.right);
+  const afterSim = performance.now();
+  const simTime = afterSim - timestamp;
+  const drawError = game.draw();
+  const afterDraw = performance.now();
+  const drawTime = afterDraw - afterSim;
+  const maybeError = simError || drawError;
+  let message;
   if (maybeError == null) {
-    output.innerText = 'All is well.';
+    message = 'All is well.';
   } else {
-    output.innerText = `Failed to draw! ${maybeError}`;
+    message = `Failed to draw! ${maybeError}`;
   }
+  if (simTimes.length < 100) {
+    simTimes.push(simTime);
+  } else {
+    simTimes[perfIdx] = simTime;
+    perfIdx = (perfIdx + 1) % 100;
+  }
+  if (drawTimes.length < 100) {
+    drawTimes.push(drawTime);
+  } else {
+    drawTimes[perfIdx] = drawTime;
+  }
+  if (totalTimes.length < 100) {
+    totalTimes.push(elapsed);
+  } else {
+    totalTimes[perfIdx] = elapsed;
+  }
+  message += ` – ${average(simTimes).toFixed(1)}ms sim`;
+  message += ` – ${average(drawTimes).toFixed(1)}ms draw`;
+  message += ` – ${((1000/average(totalTimes)).toFixed(1))}fps`;
+  output.innerText = message;
   requestAnimationFrame(drawOneFrame);
 }
+function average(arr) {
+  let sum = 0;
+  for (const val of arr) {
+    sum += val;
+  }
+  return sum / arr.length;
+}
+
 requestAnimationFrame(drawOneFrame);

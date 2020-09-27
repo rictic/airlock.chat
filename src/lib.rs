@@ -10,15 +10,59 @@ use wasm_bindgen::JsCast;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Color {
+    Red,
+    Pink,
+    Blue,
+    Orange,
+    White,
+    Black,
+}
+
+impl Color {
+    fn as_js_value(&self) -> JsValue {
+        JsValue::from_str(match self {
+            Color::Red => "red",
+            Color::Pink => "hotpink",
+            Color::Blue => "blue",
+            Color::Orange => "orange",
+            Color::White => "white",
+            Color::Black => "black",
+        })
+    }
+
+    fn random() -> Color {
+        let rand = js_sys::Math::random();
+        match (rand * 6.0).floor() as u32 {
+            0 => Color::Red,
+            1 => Color::Pink,
+            2 => Color::Blue,
+            3 => Color::Orange,
+            4 => Color::White,
+            _ => Color::Black,
+        }
+    }
+}
+
+// impl rand::distributions::Distribution<Color> {}
+
+#[derive(Clone)]
+pub struct Player {
+    color: Color,
+    x: f64,
+    y: f64,
+}
+
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Game {
-    x: f64,
-    y: f64,
     speed: f64,
     width: f64,
     height: f64,
+    local_player_color: Option<Color>,
     context: web_sys::CanvasRenderingContext2d,
+    players: Vec<Player>,
 }
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -37,62 +81,76 @@ impl Game {
     fn draw_internal(&mut self) -> Result<(), Box<dyn Error>> {
         let context = &self.context;
         context.clear_rect(0.0, 0.0, self.width, self.height);
-
         context.begin_path();
-
-        // Draw the outer circle.
-        context
-            .arc(75.0, 75.0, 50.0, 0.0, f64::consts::PI * 2.0)
-            .map_err(|_| "Failed to draw an arc.")?;
-
-        // Draw the mouth.
-        context.move_to(110.0, 75.0);
-        context
-            .arc(75.0, 75.0, 35.0, 0.0, f64::consts::PI)
-            .map_err(|_| "Failed to draw an arc.")?;
-
-        // Draw the left eye.
-        context.move_to(65.0 + self.x, 65.0 + self.y);
-        context
-            .arc(
-                60.0 + self.x,
-                65.0 + self.y,
-                5.0,
-                0.0,
-                f64::consts::PI * 2.0,
-            )
-            .map_err(|_| "Failed to draw an arc.")?;
-
-        // Draw the right eye.
-        context.move_to(95.0, 65.0);
-        context
-            .arc(90.0, 65.0, 5.0, 0.0, f64::consts::PI * 2.0)
-            .map_err(|_| "Failed to draw an arc.")?;
-
+        context.rect(0.0, 0.0, self.width, self.height);
+        context.set_fill_style(&JsValue::from_str("#f3f3f3"));
+        context.fill();
         context.stroke();
+
+        // Draw the conference table
+        self.circle(275.0, 275.0, 75.0)?;
+
+        for player in self.players.iter() {
+            self.draw_player(player)?
+        }
 
         Ok(())
     }
 
-    fn simulate_internal(&mut self, elapsed: f64, inputs: InputState) {
+    fn draw_player(&self, player: &Player) -> Result<(), &'static str> {
+        self.context.begin_path();
+        let radius = 10.0;
+        self.context.move_to(player.x + radius, player.y);
+        self.context
+            .arc(player.x, player.y, radius, 0.0, f64::consts::PI * 2.0)
+            .map_err(|_| "Failed to draw a circle.")?;
+        self.context.set_fill_style(&player.color.as_js_value());
+        self.context.fill();
+        self.context.stroke();
+        Ok(())
+    }
+
+    fn circle(&self, x: f64, y: f64, radius: f64) -> Result<(), &'static str> {
+        self.context.begin_path();
+        self.context.move_to(x + radius, y);
+        self.context
+            .arc(x, y, radius, 0.0, f64::consts::PI * 2.0)
+            .map_err(|_| "Failed to draw a circle.")?;
+        self.context.stroke();
+        Ok(())
+    }
+
+    fn simulate_internal(&mut self, elapsed: f64, inputs: InputState) -> Result<(), &'static str> {
         // elapsed is the time, in milliseconds, that has passed since the
         // last time we simulated.
         // By making our simulations relative to the amount of time that's passed,
         // the game will progress the same regardless of the frame rate, which may
         // vary between 30fps and 144fps even if our performance is perfect!
         let time_steps_passed = elapsed / 16.0;
-        if inputs.up {
-            self.y -= self.speed * time_steps_passed
+        let local_plyaer_color = match &self.local_player_color {
+            None => return Ok(()), // not controlling anything
+            Some(c) => *c,
+        };
+        for player in self.players.iter_mut() {
+            if player.color != local_plyaer_color {
+                continue;
+            }
+
+            if inputs.up {
+                player.y -= self.speed * time_steps_passed
+            }
+            if inputs.down {
+                player.y += self.speed * time_steps_passed
+            }
+            if inputs.left {
+                player.x -= self.speed * time_steps_passed
+            }
+            if inputs.right {
+                player.x += self.speed * time_steps_passed
+            }
         }
-        if inputs.down {
-            self.y += self.speed * time_steps_passed
-        }
-        if inputs.left {
-            self.x -= self.speed * time_steps_passed
-        }
-        if inputs.right {
-            self.x += self.speed * time_steps_passed
-        }
+
+        Ok(())
     }
 
     // These params describe whether the player is currently holding down each
@@ -104,8 +162,15 @@ impl Game {
         }
     }
 
-    pub fn simulate(&mut self, elapsed: f64, up: bool, down: bool, left: bool, right: bool) {
-        self.simulate_internal(
+    pub fn simulate(
+        &mut self,
+        elapsed: f64,
+        up: bool,
+        down: bool,
+        left: bool,
+        right: bool,
+    ) -> Option<String> {
+        let result = self.simulate_internal(
             elapsed,
             InputState {
                 up,
@@ -114,6 +179,10 @@ impl Game {
                 right,
             },
         );
+        match result {
+            Ok(()) => None,
+            Err(s) => Some(s.to_string()),
+        }
     }
 }
 
@@ -170,8 +239,30 @@ impl MakeGameResult {
     }
 }
 
+fn make_player(color: Color) -> Player {
+    Player {
+        color,
+        x: 0.0,
+        y: 0.0,
+    }
+}
+
 #[wasm_bindgen]
 pub fn make_game() -> MakeGameResult {
+    let mut players = vec![
+        make_player(Color::Red),
+        make_player(Color::Pink),
+        make_player(Color::Blue),
+        make_player(Color::Orange),
+        make_player(Color::White),
+        make_player(Color::Black),
+    ];
+    let num_players = players.len() as f64;
+    for (i, player) in players.iter_mut().enumerate() {
+        // Place the players equidistant around the meeting table.
+        player.x = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin());
+        player.y = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos());
+    }
     match get_canvas_info() {
         Ok(CanvasInfo {
             context,
@@ -179,12 +270,12 @@ pub fn make_game() -> MakeGameResult {
             height,
         }) => MakeGameResult {
             game: Some(Game {
-                x: 0.0,
-                y: 0.0,
                 speed: 2.0,
                 context,
                 width,
                 height,
+                local_player_color: Some(Color::random()),
+                players,
             }),
             error: None,
         },

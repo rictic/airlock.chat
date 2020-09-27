@@ -63,7 +63,6 @@ pub struct Game {
     height: f64,
     kill_distance: f64,
     local_player_color: Option<Color>,
-    last_input: InputState,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
 }
@@ -158,14 +157,13 @@ impl Game {
                 player.x += self.speed * time_steps_passed
             }
 
-            if !inputs.q && self.last_input.q {
+            if inputs.q {
                 kill_position = Some((player.x, player.y));
             }
         }
 
-        match kill_position {
-            Some(position) => self.kill_player_near(position)?,
-            None => return Ok(()),
+        if let Some(position) = kill_position {
+            self.kill_player_near(position)?
         }
 
         Ok(())
@@ -177,6 +175,9 @@ impl Game {
             Some(c) => *c,
         };
 
+        let mut killed_player: Option<&mut Player> = None;
+        let closest_distance = self.kill_distance;
+
         for player in self.players.iter_mut() {
             if player.color == local_player_color {
                 continue;
@@ -186,10 +187,13 @@ impl Game {
                 .sqrt()
                 .abs();
 
-            if distance < self.kill_distance {
-                player.dead = true;
-                break;
+            if distance < closest_distance {
+                killed_player = Some(player);
             }
+        }
+
+        if let Some(player) = killed_player {
+            player.dead = true;
         }
 
         Ok(())
@@ -222,8 +226,6 @@ impl Game {
         };
 
         let result = self.simulate_internal(elapsed, next_input);
-
-        self.last_input = next_input;
 
         match result {
             Ok(()) => None,
@@ -304,13 +306,6 @@ pub fn make_game() -> Result<Game, JsValue> {
         height,
         kill_distance: 64.0,
         local_player_color: Some(Color::random()),
-        last_input: InputState {
-            up: false,
-            down: false,
-            left: false,
-            right: false,
-            q: false,
-        },
         players,
     })
 }

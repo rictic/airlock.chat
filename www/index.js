@@ -23,6 +23,7 @@ document.addEventListener('keydown', (ev) => {
       curInput.right = true;
       break;
     case 'q':
+    case 'Q':
       curInput.q = true;
       break;
   }

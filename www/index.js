@@ -47,14 +47,21 @@ const canvas = document.createElement('canvas');
 canvas.id = 'canvas';
 document.body.appendChild(canvas);
 
-const game = wasm.make_game()
+const maybeGame = wasm.make_game();
+if (maybeGame.get_error()) {
+  throw new Error(maybeGame.get_error());
+}
+const game = maybeGame.get_game();
+if (!game) {
+  throw new Error(`Failed to make a Game object`);
+}
 function drawOneFrame() {
-  const result = game.draw(
+  const maybeError = game.draw(
       curInput.up, curInput.down, curInput.left, curInput.right);
-  if (result == null) {
-    output.innerText = 'Failed to draw!';
-  } else {
+  if (maybeError == null) {
     output.innerText = 'All is well.';
+  } else {
+    output.innerText = `Failed to draw! ${maybeError}`;
   }
   requestAnimationFrame(drawOneFrame);
 }

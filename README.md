@@ -1,3 +1,5 @@
+![Tests](https://github.com/rictic/rust-us/workflows/Tests/badge.svg)
+
 ## Getting started
 
 1. [install the rust toolchain](https://www.rust-lang.org/tools/install)

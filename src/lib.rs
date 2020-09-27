@@ -144,17 +144,8 @@ impl Game {
         // the game will progress the same regardless of the frame rate, which may
         // vary between 30fps and 144fps even if our performance is perfect!
         let time_steps_passed = elapsed / 16.0;
-        let local_player_color = match &self.local_player_color {
-            None => return Ok(()), // not controlling anything
-            Some(c) => *c,
-        };
-
-        let mut kill_position: Option<(f64, f64)> = None;
 
         for player in self.players.iter_mut() {
-            if player.color != local_player_color {
-                continue;
-            }
             let inputs = player.inputs;
             if inputs.up {
                 player.y -= self.speed * time_steps_passed
@@ -169,21 +160,17 @@ impl Game {
                 player.x += self.speed * time_steps_passed
             }
 
-            if inputs.q {
-                kill_position = Some((player.x, player.y));
-            }
-        }
-
-        if let Some(position) = kill_position {
-            self.kill_player_near(position)?
+            // We don't handle inputs.q here because player position may be
+            // out of sync, but we _super_ don't want to let life or death
+            // get out of sync.
         }
 
         Ok(())
     }
 
-    fn kill_player_near(&mut self, position: (f64, f64)) -> Result<(), &'static str> {
+    fn kill_player_near(&mut self, position: (f64, f64)) -> Result<Option<&Player>, &'static str> {
         let local_player_color = match &self.local_player_color {
-            None => return Ok(()), // not controlling anything
+            None => return Ok(None), // not controlling anything
             Some(c) => *c,
         };
 
@@ -191,7 +178,7 @@ impl Game {
         let closest_distance = self.kill_distance;
 
         for player in self.players.iter_mut() {
-            if player.color == local_player_color {
+            if player.color == local_player_color || player.dead {
                 continue;
             }
 
@@ -206,9 +193,10 @@ impl Game {
 
         if let Some(player) = killed_player {
             player.dead = true;
+            return Ok(Some(player));
         }
 
-        Ok(())
+        Ok(None)
     }
 
     // These params describe whether the player is currently holding down each
@@ -220,7 +208,18 @@ impl Game {
         }
     }
 
-    fn local_player(&mut self) -> Option<&mut Player> {
+    // Is there a way to avoid duplicating this logic?
+    fn local_player(&self) -> Option<&Player> {
+        let local_player_color = self.local_player_color?;
+        for player in self.players.iter() {
+            if player.color == local_player_color {
+                return Some(player);
+            }
+        }
+        None
+    }
+
+    fn local_player_mut(&mut self) -> Option<&mut Player> {
         let local_player_color = self.local_player_color?;
         for player in self.players.iter_mut() {
             if player.color == local_player_color {
@@ -238,18 +237,52 @@ impl Game {
         }
     }
 
-    pub fn set_inputs(&mut self, up: bool, down: bool, left: bool, right: bool, q: bool) {
+    pub fn set_inputs(
+        &mut self,
+        up: bool,
+        down: bool,
+        left: bool,
+        right: bool,
+        q: bool,
+    ) -> Result<(), JsValue> {
         let player = match self.local_player() {
-            None => return,
+            None => return Ok(()),
             Some(p) => p,
         };
-        player.inputs = InputState {
+        let new_input = InputState {
             up,
             down,
             left,
             right,
             q,
         };
+        // Read the parts of the local player that we care about.
+        let is_killing = !player.inputs.q && new_input.q;
+        let position = (player.x, player.y);
+        // ok, we're done touching player at this point. we redeclare it
+        // below so we can use it again, next time mutably.
+
+        // Now that we don't reference player any longer, the borrow checker
+        // is ok with us mutating self.
+        let mut kill_pos: Option<(f64, f64)> = None;
+        if is_killing {
+            // local player just hit the q button
+            let dead_player = self.kill_player_near(position).map_err(JsValue::from)?;
+            if let Some(dead_player) = dead_player {
+                kill_pos = Some((dead_player.x, dead_player.y));
+            }
+            // this is also a good time to broadcast the kill
+        }
+        // Get player again so we can mutate it.
+        let player = self
+            .local_player_mut()
+            .ok_or_else(|| JsValue::from("Did player kill themselves?"))?;
+        player.inputs = new_input;
+        if let Some((x, y)) = kill_pos {
+            player.x = x;
+            player.y = y;
+        }
+        Ok(())
     }
 }
 

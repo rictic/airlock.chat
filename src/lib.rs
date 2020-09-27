@@ -239,8 +239,30 @@ impl MakeGameResult {
     }
 }
 
+fn make_player(color: Color) -> Player {
+    Player {
+        color,
+        x: 0.0,
+        y: 0.0,
+    }
+}
+
 #[wasm_bindgen]
 pub fn make_game() -> MakeGameResult {
+    let mut players = vec![
+        make_player(Color::Red),
+        make_player(Color::Pink),
+        make_player(Color::Blue),
+        make_player(Color::Orange),
+        make_player(Color::White),
+        make_player(Color::Black),
+    ];
+    let num_players = players.len() as f64;
+    for (i, player) in players.iter_mut().enumerate() {
+        // Place the players equidistant around the meeting table.
+        player.x = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin());
+        player.y = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos());
+    }
     match get_canvas_info() {
         Ok(CanvasInfo {
             context,
@@ -253,38 +275,7 @@ pub fn make_game() -> MakeGameResult {
                 width,
                 height,
                 local_player_color: Some(Color::random()),
-                players: vec![
-                    Player {
-                        color: Color::Red,
-                        x: 275.0 + (100.0 * (1.0 / 6.0 * 2.0 * f64::consts::PI).sin()),
-                        y: 275.0 + (100.0 * (1.0 / 6.0 * 2.0 * f64::consts::PI).cos()),
-                    },
-                    Player {
-                        color: Color::Pink,
-                        x: 275.0 + (100.0 * (2.0 / 6.0 * 2.0 * f64::consts::PI).sin()),
-                        y: 275.0 + (100.0 * (2.0 / 6.0 * 2.0 * f64::consts::PI).cos()),
-                    },
-                    Player {
-                        color: Color::Blue,
-                        x: 275.0 + (100.0 * (3.0 / 6.0 * 2.0 * f64::consts::PI).sin()),
-                        y: 275.0 + (100.0 * (3.0 / 6.0 * 2.0 * f64::consts::PI).cos()),
-                    },
-                    Player {
-                        color: Color::Orange,
-                        x: 275.0 + (100.0 * (4.0 / 6.0 * 2.0 * f64::consts::PI).sin()),
-                        y: 275.0 + (100.0 * (4.0 / 6.0 * 2.0 * f64::consts::PI).cos()),
-                    },
-                    Player {
-                        color: Color::White,
-                        x: 275.0 + (100.0 * (5.0 / 6.0 * 2.0 * f64::consts::PI).sin()),
-                        y: 275.0 + (100.0 * (5.0 / 6.0 * 2.0 * f64::consts::PI).cos()),
-                    },
-                    Player {
-                        color: Color::Black,
-                        x: 275.0 + (100.0 * (6.0 / 6.0 * 2.0 * f64::consts::PI).sin()),
-                        y: 275.0 + (100.0 * (6.0 / 6.0 * 2.0 * f64::consts::PI).cos()),
-                    },
-                ],
+                players,
             }),
             error: None,
         },

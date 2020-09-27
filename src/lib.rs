@@ -15,35 +15,28 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 pub struct Game {
     x: f64,
     y: f64,
+    speed: f64,
     width: f64,
     height: f64,
     context: web_sys::CanvasRenderingContext2d,
 }
 
+// The state of user input at some point in time. i.e. what buttons is
+// the user holding down?
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct InputState {
+    pub up: bool,
+    pub down: bool,
+    pub left: bool,
+    pub right: bool,
+}
+
 #[wasm_bindgen]
 impl Game {
-    fn draw_internal(
-        &mut self,
-        up: bool,
-        down: bool,
-        left: bool,
-        right: bool,
-    ) -> Result<(), Box<dyn Error>> {
+    fn draw_internal(&mut self) -> Result<(), Box<dyn Error>> {
         let context = &self.context;
         context.clear_rect(0.0, 0.0, self.width, self.height);
-
-        if up {
-            self.y -= 1.0
-        }
-        if down {
-            self.y += 1.0
-        }
-        if left {
-            self.x -= 1.0
-        }
-        if right {
-            self.x += 1.0
-        }
 
         context.begin_path();
 
@@ -81,13 +74,46 @@ impl Game {
         Ok(())
     }
 
+    fn simulate_internal(&mut self, elapsed: f64, inputs: InputState) {
+        // elapsed is the time, in milliseconds, that has passed since the
+        // last time we simulated.
+        // By making our simulations relative to the amount of time that's passed,
+        // the game will progress the same regardless of the frame rate, which may
+        // vary between 30fps and 144fps even if our performance is perfect!
+        let time_steps_passed = elapsed / 16.0;
+        if inputs.up {
+            self.y -= self.speed * time_steps_passed
+        }
+        if inputs.down {
+            self.y += self.speed * time_steps_passed
+        }
+        if inputs.left {
+            self.x -= self.speed * time_steps_passed
+        }
+        if inputs.right {
+            self.x += self.speed * time_steps_passed
+        }
+    }
+
     // These params describe whether the player is currently holding down each
     // of the buttons.
-    pub fn draw(&mut self, up: bool, down: bool, left: bool, right: bool) -> Option<String> {
-        match self.draw_internal(up, down, left, right) {
+    pub fn draw(&mut self) -> Option<String> {
+        match self.draw_internal() {
             Ok(()) => None,
             Err(e) => Some(format!("Error: {}", e)),
         }
+    }
+
+    pub fn simulate(&mut self, elapsed: f64, up: bool, down: bool, left: bool, right: bool) {
+        self.simulate_internal(
+            elapsed,
+            InputState {
+                up,
+                down,
+                left,
+                right,
+            },
+        );
     }
 }
 
@@ -155,6 +181,7 @@ pub fn make_game() -> MakeGameResult {
             game: Some(Game {
                 x: 0.0,
                 y: 0.0,
+                speed: 2.0,
                 context,
                 width,
                 height,

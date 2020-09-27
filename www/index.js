@@ -55,7 +55,13 @@ const game = maybeGame.get_game();
 if (!game) {
   throw new Error(`Failed to make a Game object`);
 }
-function drawOneFrame() {
+let previousFrameTime = performance.now();
+function drawOneFrame(timestamp) {
+  const elapsed = timestamp - previousFrameTime;
+  previousFrameTime = timestamp;
+  game.simulate(
+      elapsed, curInput.up, curInput.down, curInput.left, curInput.right);
+  game.draw()
   const maybeError = game.draw(
       curInput.up, curInput.down, curInput.left, curInput.right);
   if (maybeError == null) {

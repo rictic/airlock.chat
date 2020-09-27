@@ -3,12 +3,23 @@ use std::error::Error;
 use std::f64;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::{ErrorEvent, MessageEvent, WebSocket};
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+macro_rules! console_log {
+    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Color {
@@ -47,7 +58,7 @@ impl Color {
 
 // impl rand::distributions::Distribution<Color> {}
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Player {
     color: Color,
     x: f64,
@@ -137,7 +148,7 @@ impl Game {
             }
 
             if inputs.up {
-                player.y -= self.speed * time_steps_passed
+                player.y -= self.speed * time_steps_passed + 1.0
             }
             if inputs.down {
                 player.y += self.speed * time_steps_passed
@@ -230,6 +241,7 @@ fn make_player(color: Color) -> Player {
 
 #[wasm_bindgen]
 pub fn make_game() -> Result<Game, JsValue> {
+    start_websocket()?;
     let mut players = vec![
         make_player(Color::Red),
         make_player(Color::Pink),
@@ -258,4 +270,39 @@ pub fn make_game() -> Result<Game, JsValue> {
         local_player_color: Some(Color::random()),
         players,
     })
+}
+
+pub fn start_websocket() -> Result<(), JsValue> {
+    let ws = WebSocket::new("ws://localhost:3012")?;
+    let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
+        // Starting with assuming text messages. Can make efficient later (bson?).
+        if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
+            console_log!("message from network: {:?}", txt);
+        } else {
+            console_log!("non-string message received! {:?}", e.data());
+        }
+    }) as Box<dyn FnMut(MessageEvent)>);
+    // set message event handler on WebSocket
+    ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+    // forget the callback to keep it alive
+    onmessage_callback.forget();
+
+    let onerror_callback = Closure::wrap(Box::new(move |e: ErrorEvent| {
+        console_log!("error event on websocket: {:?}", e);
+    }) as Box<dyn FnMut(ErrorEvent)>);
+    ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
+    onerror_callback.forget();
+
+    let cloned_ws = ws.clone();
+    let onopen_callback = Closure::wrap(Box::new(move |_| {
+        console_log!("socket opened");
+        match cloned_ws.send_with_str("ping") {
+            Ok(_) => (),
+            Err(err) => console_log!("error sending message: {:?}", err),
+        }
+    }) as Box<dyn FnMut(JsValue)>);
+    ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+    onopen_callback.forget();
+
+    Ok(())
 }

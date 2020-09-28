@@ -74,6 +74,7 @@ struct Player {
     color: Color,
     position: Position,
     dead: bool,
+    impostor: bool,
     inputs: InputState,
 }
 
@@ -135,20 +136,24 @@ impl Game {
         context.stroke();
 
         // Draw the conference table
+        context.set_stroke_style(&JsValue::from_str("#000000"));
+        context.set_fill_style(&JsValue::from_str("#358"));
         self.circle(275.0, 275.0, 75.0)?;
 
         let show_dead_people = match self.local_player() {
             None => true,
-            Some(p) => p.dead,
+            Some(p) => p.dead || p.impostor,
         };
 
+        // Draw bodies first, then players on top, so imps can stand on top of bodies.
+        // However maybe we should instead draw items from highest to lowest, vertically?
+        for body in self.bodies.iter() {
+            self.draw_body(*body)?;
+        }
         for player in self.players.iter() {
             if show_dead_people || !player.dead {
                 self.draw_player(player)?
             }
-        }
-        for body in self.bodies.iter() {
-            self.draw_body(*body)?;
         }
 
         Ok(())
@@ -212,6 +217,7 @@ impl Game {
             .arc(x, y, radius, 0.0, f64::consts::PI * 2.0)
             .map_err(|_| "Failed to draw a circle.")?;
         self.context.stroke();
+        self.context.fill();
         Ok(())
     }
 
@@ -256,6 +262,7 @@ impl Game {
         let mut closest_distance = self.kill_distance;
 
         for player in self.players.iter_mut() {
+            // TODO(can't kill impostors)
             if player.color == local_player_color || player.dead {
                 continue;
             }
@@ -322,7 +329,7 @@ impl Game {
             return Ok(()); // quick exit for the boring case
         }
         // Read the parts of the local player that we care about.
-        let is_killing = !player.inputs.q && new_input.q;
+        let is_killing = player.impostor && !player.inputs.q && new_input.q;
         let position = player.position;
         // ok, we're done touching player at this point. we redeclare it
         // below so we can use it again, next time mutably.
@@ -434,6 +441,7 @@ fn make_player(color: Color) -> Player {
         color,
         dead: false,
         position: Position { x: 0.0, y: 0.0 },
+        impostor: true, // oops all impostors!
         inputs: InputState {
             up: false,
             down: false,
@@ -523,10 +531,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             kill_distance: 64.0,
             local_player_color: Some(Color::random()),
             players,
-            bodies: vec![DeadBody {
-                color: Color::Pink,
-                position: Position { x: 50.0, y: 50.0 },
-            }],
+            bodies: Vec::new(),
             socket: ws,
         })),
     };

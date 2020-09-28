@@ -287,6 +287,9 @@ impl Game {
             player.x = x;
             player.y = y;
         }
+        // Ok now we're done mutating player, get an immutable reference.
+        // There _has_ to be a better way to do this though lol.
+        // We've walked the vec of players three times now!
         let player: &Player = self.local_player().unwrap();
         if let Some((_, _, color)) = kill_info {
             self.send_msg(&Message::Killed(color))?;

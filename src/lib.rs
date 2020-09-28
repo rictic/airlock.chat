@@ -93,7 +93,14 @@ struct Game {
     local_player_color: Option<Color>,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
+    bodies: Vec<DeadBody>,
     socket: WebSocket,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+struct DeadBody {
+    color: Color,
+    position: Position,
 }
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -110,7 +117,7 @@ pub struct InputState {
 
 #[wasm_bindgen]
 impl Game {
-    fn draw_internal(&mut self) -> Result<(), Box<dyn Error>> {
+    fn draw_internal(&self) -> Result<(), Box<dyn Error>> {
         let context = &self.context;
         context.clear_rect(0.0, 0.0, self.width, self.height);
         context.begin_path();
@@ -126,6 +133,9 @@ impl Game {
             if !player.dead {
                 self.draw_player(player)?
             }
+        }
+        for body in self.bodies.iter() {
+            self.draw_body(*body)?;
         }
 
         Ok(())
@@ -146,6 +156,26 @@ impl Game {
             )
             .map_err(|_| "Failed to draw a circle.")?;
         self.context.set_fill_style(&player.color.as_js_value());
+        self.context.fill();
+        self.context.stroke();
+        Ok(())
+    }
+
+    fn draw_body(&self, body: DeadBody) -> Result<(), &'static str> {
+        self.context.begin_path();
+        let radius = 10.0;
+        self.context
+            .move_to(body.position.x + radius, body.position.y);
+        self.context
+            .arc(
+                body.position.x,
+                body.position.y,
+                radius,
+                0.0,
+                f64::consts::PI * 1.0,
+            )
+            .map_err(|_| "Failed to draw a circle.")?;
+        self.context.set_fill_style(&body.color.as_js_value());
         self.context.fill();
         self.context.stroke();
         Ok(())
@@ -223,7 +253,7 @@ impl Game {
 
     // These params describe whether the player is currently holding down each
     // of the buttons.
-    fn draw(&mut self) -> Option<String> {
+    fn draw(&self) -> Option<String> {
         match self.draw_internal() {
             Ok(()) => None,
             Err(e) => Some(format!("Error: {}", e)),
@@ -275,30 +305,34 @@ impl Game {
 
         // Now that we don't reference player any longer, the borrow checker
         // is ok with us mutating self.
-        let mut kill_info: Option<(Position, Color)> = None;
+        let mut kill_info: Option<DeadBody> = None;
         if is_killing {
             // local player just hit the q button
             let dead_player = self.kill_player_near(position).map_err(JsValue::from)?;
             if let Some(dead_player) = dead_player {
-                kill_info = Some((dead_player.position, dead_player.color));
+                kill_info = Some(DeadBody {
+                    position: dead_player.position,
+                    color: dead_player.color,
+                });
             }
             // this is also a good time to broadcast the kill
         }
-        // Get player again so we can mutate it.
-        let player = self
-            .local_player_mut()
-            .ok_or_else(|| JsValue::from("Did player kill themselves?"))?;
-        player.inputs = new_input;
-        if let Some((position, _)) = kill_info {
-            player.position = position;
+        // Move the killer on top of the new body.
+        {
+            let player = self
+                .local_player_mut()
+                .ok_or_else(|| JsValue::from("Did player kill themselves?"))?;
+            player.inputs = new_input;
+            if let Some(DeadBody { position, color: _ }) = kill_info {
+                player.position = position;
+            }
         }
-        // Ok now we're done mutating player, get an immutable reference.
-        // There _has_ to be a better way to do this though lol.
-        // We've walked the vec of players three times now!
+        if let Some(body) = kill_info {
+            self.send_msg(&Message::Killed(body))?;
+            self.bodies.push(body);
+        }
+
         let player: &Player = self.local_player().unwrap();
-        if let Some((_, color)) = kill_info {
-            self.send_msg(&Message::Killed(color))?;
-        }
         self.send_msg(&Message::Move(MoveMessage {
             color: player.color,
             inputs: player.inputs,
@@ -316,12 +350,13 @@ impl Game {
 
     fn handle_msg(&mut self, message: &Message) -> Result<(), JsValue> {
         match message {
-            Message::Killed(color) => {
+            Message::Killed(body) => {
                 for player in self.players.iter_mut() {
-                    if player.color == *color {
+                    if player.color == body.color {
                         player.dead = true;
                     }
                 }
+                self.bodies.push(*body);
             }
             Message::Move(moved) => {
                 for player in self.players.iter_mut() {
@@ -422,7 +457,7 @@ impl GameWrapper {
     }
 
     pub fn draw(&mut self) -> Result<Option<String>, JsValue> {
-        let mut game = self
+        let game = self
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
@@ -464,6 +499,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             kill_distance: 64.0,
             local_player_color: Some(Color::random()),
             players,
+            bodies: vec![DeadBody {
+                color: Color::Pink,
+                position: Position { x: 50.0, y: 50.0 },
+            }],
             socket: ws,
         })),
     };
@@ -540,7 +579,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
 #[derive(Serialize, Deserialize, Debug)]
 enum Message {
     Move(MoveMessage),
-    Killed(Color),
+    Killed(DeadBody),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

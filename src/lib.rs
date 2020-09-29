@@ -35,15 +35,23 @@ enum Color {
 }
 
 impl Color {
+    fn to_str(&self) -> &'static str {
+        match self {
+            Color::Red => "#ff0102",
+            Color::Pink => "#ff69b4",
+            Color::Blue => "#1601ff",
+            Color::Orange => "#ffa502",
+            Color::White => "#ffffff",
+            Color::Black => "#000000",
+        }
+    }
+
     fn as_js_value(&self) -> JsValue {
-        JsValue::from_str(match self {
-            Color::Red => "red",
-            Color::Pink => "hotpink",
-            Color::Blue => "blue",
-            Color::Orange => "orange",
-            Color::White => "white",
-            Color::Black => "black",
-        })
+        JsValue::from_str(self.to_str())
+    }
+
+    fn as_semitransparant_js_value(&self) -> JsValue {
+        JsValue::from(format!("{}88", self.to_str()))
     }
 
     fn random() -> Color {
@@ -129,8 +137,13 @@ impl Game {
         // Draw the conference table
         self.circle(275.0, 275.0, 75.0)?;
 
+        let show_dead_people = match self.local_player() {
+            None => true,
+            Some(p) => p.dead,
+        };
+
         for player in self.players.iter() {
-            if !player.dead {
+            if show_dead_people || !player.dead {
                 self.draw_player(player)?
             }
         }
@@ -155,7 +168,18 @@ impl Game {
                 f64::consts::PI * 2.0,
             )
             .map_err(|_| "Failed to draw a circle.")?;
-        self.context.set_fill_style(&player.color.as_js_value());
+        let color = if player.dead {
+            player.color.as_semitransparant_js_value()
+        } else {
+            player.color.as_js_value()
+        };
+        self.context.set_fill_style(&color);
+        let stroke_color = if player.dead {
+            JsValue::from("#00000088")
+        } else {
+            JsValue::from("#000000")
+        };
+        self.context.set_stroke_style(&stroke_color);
         self.context.fill();
         self.context.stroke();
         Ok(())

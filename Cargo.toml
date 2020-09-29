@@ -3,6 +3,9 @@ name = "rust-us"
 version = "0.1.0"
 authors = ["Peter Burns <rictic@gmail.com>"]
 edition = "2018"
+description = "A simple deception game, as an exercise in learning rust."
+repository = "https://github.com/rictic/rust-us"
+license = "Apache and MIT dual license"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

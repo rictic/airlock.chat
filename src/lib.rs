@@ -64,10 +64,23 @@ impl Color {
 #[derive(Clone, Copy)]
 struct Player {
     color: Color,
-    x: f64,
-    y: f64,
+    position: Position,
     dead: bool,
     inputs: InputState,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+struct Position {
+    x: f64,
+    y: f64,
+}
+
+impl Position {
+    fn distance(self, other: Position) -> f64 {
+        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2))
+            .sqrt()
+            .abs()
+    }
 }
 
 #[wasm_bindgen]
@@ -121,9 +134,16 @@ impl Game {
     fn draw_player(&self, player: &Player) -> Result<(), &'static str> {
         self.context.begin_path();
         let radius = 10.0;
-        self.context.move_to(player.x + radius, player.y);
         self.context
-            .arc(player.x, player.y, radius, 0.0, f64::consts::PI * 2.0)
+            .move_to(player.position.x + radius, player.position.y);
+        self.context
+            .arc(
+                player.position.x,
+                player.position.y,
+                radius,
+                0.0,
+                f64::consts::PI * 2.0,
+            )
             .map_err(|_| "Failed to draw a circle.")?;
         self.context.set_fill_style(&player.color.as_js_value());
         self.context.fill();
@@ -152,16 +172,16 @@ impl Game {
         for player in self.players.iter_mut() {
             let inputs = player.inputs;
             if inputs.up {
-                player.y -= self.speed * time_steps_passed
+                player.position.y -= self.speed * time_steps_passed
             }
             if inputs.down {
-                player.y += self.speed * time_steps_passed
+                player.position.y += self.speed * time_steps_passed
             }
             if inputs.left {
-                player.x -= self.speed * time_steps_passed
+                player.position.x -= self.speed * time_steps_passed
             }
             if inputs.right {
-                player.x += self.speed * time_steps_passed
+                player.position.x += self.speed * time_steps_passed
             }
 
             // We don't handle inputs.q here because player position may be
@@ -172,26 +192,24 @@ impl Game {
         Ok(())
     }
 
-    fn kill_player_near(&mut self, position: (f64, f64)) -> Result<Option<&Player>, &'static str> {
+    fn kill_player_near(&mut self, position: Position) -> Result<Option<&Player>, &'static str> {
         let local_player_color = match &self.local_player_color {
             None => return Ok(None), // not controlling anything
             Some(c) => *c,
         };
 
         let mut killed_player: Option<&mut Player> = None;
-        let closest_distance = self.kill_distance;
+        let mut closest_distance = self.kill_distance;
 
         for player in self.players.iter_mut() {
             if player.color == local_player_color || player.dead {
                 continue;
             }
 
-            let distance = ((position.0 - player.x).powi(2) + (position.1 - player.y).powi(2))
-                .sqrt()
-                .abs();
-
+            let distance = position.distance(player.position);
             if distance < closest_distance {
                 killed_player = Some(player);
+                closest_distance = distance;
             }
         }
 
@@ -251,18 +269,18 @@ impl Game {
         }
         // Read the parts of the local player that we care about.
         let is_killing = !player.inputs.q && new_input.q;
-        let position = (player.x, player.y);
+        let position = player.position;
         // ok, we're done touching player at this point. we redeclare it
         // below so we can use it again, next time mutably.
 
         // Now that we don't reference player any longer, the borrow checker
         // is ok with us mutating self.
-        let mut kill_info: Option<(f64, f64, Color)> = None;
+        let mut kill_info: Option<(Position, Color)> = None;
         if is_killing {
             // local player just hit the q button
             let dead_player = self.kill_player_near(position).map_err(JsValue::from)?;
             if let Some(dead_player) = dead_player {
-                kill_info = Some((dead_player.x, dead_player.y, dead_player.color));
+                kill_info = Some((dead_player.position, dead_player.color));
             }
             // this is also a good time to broadcast the kill
         }
@@ -271,22 +289,20 @@ impl Game {
             .local_player_mut()
             .ok_or_else(|| JsValue::from("Did player kill themselves?"))?;
         player.inputs = new_input;
-        if let Some((x, y, _)) = kill_info {
-            player.x = x;
-            player.y = y;
+        if let Some((position, _)) = kill_info {
+            player.position = position;
         }
         // Ok now we're done mutating player, get an immutable reference.
         // There _has_ to be a better way to do this though lol.
         // We've walked the vec of players three times now!
         let player: &Player = self.local_player().unwrap();
-        if let Some((_, _, color)) = kill_info {
+        if let Some((_, color)) = kill_info {
             self.send_msg(&Message::Killed(color))?;
         }
         self.send_msg(&Message::Move(MoveMessage {
             color: player.color,
             inputs: player.inputs,
-            current_x: player.x,
-            current_y: player.y,
+            current_position: player.position,
         }))?;
         Ok(())
     }
@@ -311,8 +327,7 @@ impl Game {
                 for player in self.players.iter_mut() {
                     if player.color == moved.color {
                         player.inputs = moved.inputs;
-                        player.x = moved.current_x;
-                        player.y = moved.current_y;
+                        player.position = moved.current_position;
                     }
                 }
             }
@@ -359,8 +374,7 @@ fn make_player(color: Color) -> Player {
     Player {
         color,
         dead: false,
-        x: 0.0,
-        y: 0.0,
+        position: Position { x: 0.0, y: 0.0 },
         inputs: InputState {
             up: false,
             down: false,
@@ -429,8 +443,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
     let num_players = players.len() as f64;
     for (i, player) in players.iter_mut().enumerate() {
         // Place the players equidistant around the meeting table.
-        player.x = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin());
-        player.y = 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos());
+        player.position = Position {
+            x: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin()),
+            y: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos()),
+        };
     }
     let CanvasInfo {
         context,
@@ -531,6 +547,5 @@ enum Message {
 struct MoveMessage {
     color: Color,
     inputs: InputState,
-    current_x: f64,
-    current_y: f64,
+    current_position: Position,
 }

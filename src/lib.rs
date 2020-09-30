@@ -70,9 +70,13 @@ impl Color {
     }
 
     fn random() -> Color {
-        let idx = (js_sys::Math::random() * (Color::all().len() as f64)).floor() as usize;
+        let idx = random_up_to(Color::all().len() as f64) as usize;
         Color::all()[idx]
     }
+}
+
+fn random_up_to(exclusive_max: f64) -> f64 {
+    (js_sys::Math::random() * exclusive_max).floor()
 }
 
 type UUID = [u8; 16];
@@ -125,11 +129,31 @@ struct Game {
     socket: WebSocket,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
 enum GameStatus {
     Connecting,
     Lobby,
+    Playing,
+    Won(Team),
     Disconnected,
+}
+
+impl GameStatus {
+    fn finished(self) -> bool {
+        match self {
+            GameStatus::Connecting => false,
+            GameStatus::Lobby => false,
+            GameStatus::Playing => false,
+            GameStatus::Won(_) => true,
+            GameStatus::Disconnected => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
+enum Team {
+    Crew,
+    Impostors,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -156,6 +180,7 @@ struct InputState {
     kill: bool,
     activate: bool,
     report: bool,
+    play: bool,
 }
 
 #[wasm_bindgen]
@@ -179,14 +204,17 @@ impl Game {
             Some(p) => p.dead || p.impostor,
         };
 
-        // Draw bodies first, then players on top, so imps can stand on top of bodies.
+        // Draw tasks, then bodies, then players on top, so tasks are behind everything, then
+        // bodies, then imps. That way imps can stand on top of bodies.
         // However maybe we should instead draw items from highest to lowest, vertically?
         if let Some(local_player) = self.local_player() {
-            for task in local_player.tasks.iter() {
-                if task.finished {
-                    continue;
+            if self.status == GameStatus::Playing {
+                for task in local_player.tasks.iter() {
+                    if task.finished {
+                        continue;
+                    }
+                    self.draw_task(*task, local_player.impostor)?;
                 }
-                self.draw_task(*task, local_player.impostor)?;
             }
         }
         for body in self.bodies.iter() {
@@ -363,6 +391,8 @@ impl Game {
         let is_killing = player.impostor && !current_input.kill && new_input.kill;
         let position = player.position;
         let activating = !current_input.activate && new_input.activate;
+        let starting_play =
+            self.status == GameStatus::Lobby && !current_input.play && new_input.play;
         self.inputs = new_input;
         // ok, we're done touching player at this point. we redeclare it
         // below so we can use it again, next time mutably.
@@ -372,6 +402,9 @@ impl Game {
         }
         if activating {
             self.activate_near(position)?;
+        }
+        if starting_play {
+            self.start()?;
         }
 
         let speed_changed: bool;
@@ -417,7 +450,7 @@ impl Game {
             Some(c) => *c,
         };
 
-        let mut killed_player: Option<&mut Player> = None;
+        let mut killed_player: Option<DeadBody> = None;
         let mut closest_distance = self.kill_distance;
 
         for player in self.players.iter_mut() {
@@ -427,19 +460,16 @@ impl Game {
 
             let distance = position.distance(player.position);
             if distance < closest_distance {
-                killed_player = Some(player);
+                killed_player = Some(DeadBody {
+                    position: player.position,
+                    color: player.color,
+                });
                 closest_distance = distance;
             }
         }
 
-        if let Some(player) = killed_player {
-            player.dead = true;
-            let player: &Player = player;
-            let body = DeadBody {
-                position: player.position,
-                color: player.color,
-            };
-            self.bodies.push(body);
+        if let Some(body) = killed_player {
+            self.note_death(body)?;
             self.send_msg(&Message::Killed(body))?;
             // Move the killer on top of the new body.
             if let Some(player) = self.local_player_mut() {
@@ -459,19 +489,97 @@ impl Game {
         let is_imp = local_player.impostor;
         let color = local_player.color;
 
-        let mut finished_task: Option<(usize, &mut Task)> = None;
-        for (i, task) in local_player.tasks.iter_mut().enumerate() {
+        let mut finished_task: Option<FinishedTask> = None;
+        for (index, task) in local_player.tasks.iter_mut().enumerate() {
             let distance = position.distance(task.position);
             if distance < closest_distance {
-                finished_task = Some((i, task));
+                finished_task = Some(FinishedTask { index, color });
                 closest_distance = distance;
             }
         }
-        if let Some((i, task)) = finished_task {
+        if let Some(finished_task) = finished_task {
             if !is_imp {
-                task.finished = true;
-                self.send_msg(&Message::FinishedTask(FinishedTask { color, index: i }))?;
+                self.note_finished_task(finished_task)?;
+                self.send_msg(&Message::FinishedTask(finished_task))?;
             }
+        }
+        Ok(())
+    }
+
+    fn start(&mut self) -> Result<(), JsValue> {
+        let impostor_index = random_up_to(self.players.len() as f64) as usize;
+        let impostor = &self.players[impostor_index];
+        let impostors = vec![impostor.uuid];
+        let start_data = StartGame { impostors };
+        self.note_game_started(&start_data)?;
+        self.send_msg(&Message::StartGame(start_data))?;
+        Ok(())
+    }
+
+    fn win(&mut self, team: Team) -> Result<(), JsValue> {
+        self.status = GameStatus::Won(team);
+        Ok(())
+    }
+
+    fn note_game_started(&mut self, start_data: &StartGame) -> Result<(), JsValue> {
+        if self.status != GameStatus::Lobby {
+            return Err(JsValue::from(format!("Internal error: got a message to start a game when not in the lobby!? Game status: {:?}", self.status)));
+        }
+        self.status = GameStatus::Playing;
+        for player in self.players.iter_mut() {
+            for impostor_uuid in start_data.impostors.iter() {
+                if player.uuid == *impostor_uuid {
+                    player.impostor = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn note_death(&mut self, body: DeadBody) -> Result<(), JsValue> {
+        for player in self.players.iter_mut() {
+            if player.color == body.color {
+                player.dead = true;
+            }
+        }
+        self.bodies.push(body);
+        if self.impostors_outnumber_players() {
+            self.win(Team::Impostors)?;
+        }
+        Ok(())
+    }
+
+    fn impostors_outnumber_players(&self) -> bool {
+        let mut impostor_count = 0;
+        let mut crew_count = 0;
+        for player in self.players.iter() {
+            if player.dead {
+                continue;
+            }
+            if player.impostor {
+                impostor_count += 1;
+            } else {
+                crew_count += 1;
+            }
+        }
+        impostor_count >= crew_count
+    }
+
+    fn note_finished_task(&mut self, finished: FinishedTask) -> Result<(), JsValue> {
+        for player in self.players.iter_mut() {
+            if player.color == finished.color {
+                if let Some(task) = player.tasks.get_mut(finished.index) {
+                    task.finished = true;
+                }
+            }
+        }
+        let all_crew_tasks_finished = self
+            .players
+            .iter()
+            .filter(|p| !p.impostor)
+            .all(|p| p.tasks.iter().all(|t| t.finished));
+        if all_crew_tasks_finished {
+            self.win(Team::Crew)?;
         }
         Ok(())
     }
@@ -484,15 +592,13 @@ impl Game {
     }
 
     fn handle_msg(&mut self, message: Message) -> Result<(), JsValue> {
+        if self.status.finished() {
+            return Ok(()); // Nothing more to say. Refresh for a new game!
+        }
         match message {
-            Message::Killed(body) => {
-                for player in self.players.iter_mut() {
-                    if player.color == body.color {
-                        player.dead = true;
-                    }
-                }
-                self.bodies.push(body);
-            }
+            Message::StartGame(start) => self.note_game_started(&start)?,
+            Message::Killed(body) => self.note_death(body)?,
+            Message::FinishedTask(finished) => self.note_finished_task(finished)?,
             Message::Move(moved) => {
                 for player in self.players.iter_mut() {
                     if player.color == moved.color {
@@ -501,52 +607,53 @@ impl Game {
                     }
                 }
             }
-            Message::FinishedTask(FinishedTask { color, index }) => {
-                for player in self.players.iter_mut() {
-                    if player.color == color {
-                        if let Some(task) = player.tasks.get_mut(index) {
-                            task.finished = true;
-                        }
-                    }
-                }
-            }
-            Message::Snapshot(Snapshot { bodies, players }) => {
+            Message::Snapshot(Snapshot {
+                status,
+                bodies,
+                players,
+            }) => {
                 // This is a sloppy kind of consensus that isn't guaranteed to converge.
                 // Easiest way to resolve this is to make the server smarter, but that will
                 // involve learning tokio D:
+                self.status = status;
                 self.bodies = bodies;
                 self.players = players;
             }
             Message::Join(mut player) => {
-                for p in self.players.iter() {
-                    if p.uuid == player.uuid {
-                        return Ok(()); // we know about this player already
-                    }
-                }
-                // ok, it's a new player, and we have room for them. if their color is
-                // already taken, give them a new one.
-                let taken_colors: BTreeSet<Color> = self.players.iter().map(|p| p.color).collect();
-                let add_player;
-                if taken_colors.contains(&player.color) {
-                    match Color::all().iter().find(|c| !taken_colors.contains(c)) {
-                        None => {
-                            add_player = false; // we can't add this player, all colors are taken!
-                        }
-                        Some(c) => {
-                            add_player = true;
-                            player.color = *c;
+                if self.status == GameStatus::Lobby {
+                    for p in self.players.iter() {
+                        if p.uuid == player.uuid {
+                            return Ok(()); // we know about this player already
                         }
                     }
-                } else {
-                    // player's color wasn't taken, they're good to go!
-                    add_player = true;
+                    // ok, it's a new player, and we have room for them. if their color is
+                    // already taken, give them a new one.
+                    let taken_colors: BTreeSet<Color> =
+                        self.players.iter().map(|p| p.color).collect();
+                    let add_player;
+                    if taken_colors.contains(&player.color) {
+                        match Color::all().iter().find(|c| !taken_colors.contains(c)) {
+                            None => {
+                                add_player = false; // we can't add this player, all colors are taken!
+                            }
+                            Some(c) => {
+                                add_player = true;
+                                player.color = *c;
+                            }
+                        }
+                    } else {
+                        // player's color wasn't taken, they're good to go!
+                        add_player = true;
+                    }
+                    if add_player {
+                        // We've added the new player (possibly with a new color)
+                        self.players.push(player);
+                    }
                 }
-                if add_player {
-                    // We've added the new player (possibly with a new color)
-                    self.players.push(player);
-                }
+
                 // Send out a snapshot to catch the new client up, whether or not they're playing.
                 self.send_msg(&Message::Snapshot(Snapshot {
+                    status: self.status,
                     bodies: self.bodies.clone(),
                     players: self.players.clone(),
                 }))?;
@@ -607,12 +714,13 @@ impl GameWrapper {
         kill: bool,
         report: bool,
         activate: bool,
+        play: bool,
     ) -> Result<(), JsValue> {
         let mut game = self
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if game.status == GameStatus::Disconnected {
+        if game.status.finished() {
             return Ok(());
         }
         game.take_input(InputState {
@@ -623,6 +731,7 @@ impl GameWrapper {
             kill,
             report,
             activate,
+            play,
         })
     }
 
@@ -636,6 +745,9 @@ impl GameWrapper {
         }
         if game.status == GameStatus::Disconnected {
             return Ok(Some("Disconnected from server".to_string()));
+        }
+        if let GameStatus::Won(team) = game.status {
+            return Ok(Some(format!("{:?} win!", team)));
         }
         Ok(game.simulate(elapsed))
     }
@@ -656,7 +768,7 @@ impl GameWrapper {
 }
 
 pub fn random_byte() -> u8 {
-    (js_sys::Math::random() * 256.0).floor() as u8
+    random_up_to(256.0) as u8
 }
 
 #[wasm_bindgen]
@@ -701,14 +813,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         tasks: (0..6)
             .map(|_| Task {
                 position: Position {
-                    x: (js_sys::Math::random() * width)
-                        .floor()
-                        .max(30.0)
-                        .min(width - 30.0),
-                    y: (js_sys::Math::random() * height)
-                        .floor()
-                        .max(30.0)
-                        .min(height - 30.0),
+                    x: random_up_to(width).max(30.0).min(width - 30.0),
+                    y: random_up_to(height).max(30.0).min(height - 30.0),
                 },
                 finished: false,
             })
@@ -733,6 +839,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
                 kill: false,
                 activate: false,
                 report: false,
+                play: false,
             },
             local_player_uuid: Some(my_uuid),
             players: vec![local_player],
@@ -793,7 +900,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             let mut game = game_clone
                 .lock()
                 .expect("Internal error: could not get a lock on the game");
-            game.status = GameStatus::Disconnected;
+            match game.status {
+                GameStatus::Won(_) => (), // do nothing, this is expected
+                _ => game.status = GameStatus::Disconnected,
+            }
         }) as Box<dyn FnMut(ErrorEvent)>);
         game.socket
             .set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
@@ -829,16 +939,17 @@ enum Message {
     FinishedTask(FinishedTask),
     Join(Player),
     Snapshot(Snapshot),
+    StartGame(StartGame),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 struct MoveMessage {
     color: Color,
     speed: Speed,
     position: Position,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 struct FinishedTask {
     color: Color,
     index: usize,
@@ -846,6 +957,12 @@ struct FinishedTask {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Snapshot {
+    status: GameStatus,
     bodies: Vec<DeadBody>,
     players: Vec<Player>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct StartGame {
+    impostors: Vec<UUID>,
 }

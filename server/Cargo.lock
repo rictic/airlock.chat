@@ -676,6 +676,7 @@ dependencies = [
 name = "rust_us_core"
 version = "0.1.0"
 dependencies = [
+ "rand",
  "serde",
  "serde_json",
 ]

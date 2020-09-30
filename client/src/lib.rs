@@ -24,17 +24,6 @@ extern "C" {
     fn log(s: &str);
 }
 
-// TODO: can we provide one implementation if compiled for wasm and another if not?
-// Is there a cross-compatible randomness library already out there?
-fn random_color() -> Color {
-    let idx = random_up_to(Color::all().len() as f64) as usize;
-    Color::all()[idx]
-}
-
-fn random_up_to(exclusive_max: f64) -> f64 {
-    (js_sys::Math::random() * exclusive_max).floor()
-}
-
 struct Canvas {
     width: f64,
     height: f64,
@@ -314,10 +303,6 @@ impl GameWrapper {
     }
 }
 
-pub fn random_byte() -> u8 {
-    random_up_to(256.0) as u8
-}
-
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
     let CanvasInfo {
@@ -328,28 +313,11 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let ws = WebSocket::new("ws://localhost:3012")?;
 
-    let my_uuid: UUID = [
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-    ];
-    let starting_position_seed = js_sys::Math::random();
+    let my_uuid: UUID = random_uuid();
+    let starting_position_seed = randf64();
     let local_player = Player {
         uuid: my_uuid,
-        color: random_color(),
+        color: Color::random(),
         dead: false,
         position: Position {
             x: 275.0 + (100.0 * (starting_position_seed * 2.0 * f64::consts::PI).sin()),

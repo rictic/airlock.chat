@@ -111,6 +111,7 @@ impl Position {
 #[wasm_bindgen]
 #[derive(Clone)]
 struct Game {
+    status: GameStatus,
     speed: f64,
     width: f64,
     height: f64,
@@ -122,6 +123,13 @@ struct Game {
     players: Vec<Player>,
     bodies: Vec<DeadBody>,
     socket: WebSocket,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum GameStatus {
+    Connecting,
+    Lobby,
+    Disconnected,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -604,6 +612,9 @@ impl GameWrapper {
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
+        if game.status == GameStatus::Disconnected {
+            return Ok(());
+        }
         game.take_input(InputState {
             up,
             down,
@@ -620,6 +631,12 @@ impl GameWrapper {
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
+        if game.status == GameStatus::Connecting {
+            return Ok(None);
+        }
+        if game.status == GameStatus::Disconnected {
+            return Ok(Some("Disconnected from server".to_string()));
+        }
         Ok(game.simulate(elapsed))
     }
 
@@ -628,6 +645,12 @@ impl GameWrapper {
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
+        if game.status == GameStatus::Connecting {
+            return Ok(None);
+        }
+        if game.status == GameStatus::Disconnected {
+            return Ok(Some("Disconnected from server".to_string()));
+        }
         Ok(game.draw())
     }
 }
@@ -695,6 +718,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
 
     let wrapper = GameWrapper {
         game: Arc::new(Mutex::new(Game {
+            status: GameStatus::Connecting,
             speed: 2.0,
             context,
             width,
@@ -763,8 +787,13 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             .set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
         onerror_callback.forget();
 
+        let game_clone = wrapper.game.clone();
         let onclose_callback = Closure::wrap(Box::new(move |_| {
             console_log!("websocket closed");
+            let mut game = game_clone
+                .lock()
+                .expect("Internal error: could not get a lock on the game");
+            game.status = GameStatus::Disconnected;
         }) as Box<dyn FnMut(ErrorEvent)>);
         game.socket
             .set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
@@ -774,9 +803,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         let game_clone = wrapper.game.clone();
         let onopen_callback = Closure::wrap(Box::new(move |_| {
             console_log!("socket opened");
-            let game = game_clone
+            let mut game = game_clone
                 .lock()
                 .expect("Internal error: could not get a lock on the game");
+            game.status = GameStatus::Lobby;
             game.send_msg(&Message::Join(
                 game.local_player()
                     .expect("Internal error: could not get local player during init")

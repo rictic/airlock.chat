@@ -31,7 +31,8 @@ function drawOneFrame() {
   if (maybeError == null) {
     message = 'All is well.';
   } else {
-    message = `Failed to draw! ${maybeError}`;
+    output.innerText = `${maybeError}`;
+    return;
   }
   if (simTimes.length < 100) {
     simTimes.push(simTime);

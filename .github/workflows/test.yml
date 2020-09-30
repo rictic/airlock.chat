@@ -19,3 +19,5 @@ jobs:
       run: (cd client && wasm-pack test --headless --firefox)
     - name: Run server tests
       run: (cd server && cargo test)
+    - name: Run core tests
+      run: (cd core && cargo test)

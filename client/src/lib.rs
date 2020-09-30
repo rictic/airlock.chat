@@ -1,4 +1,5 @@
 mod utils;
+use rust_us_core::Position;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -93,23 +94,9 @@ struct Player {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
-struct Position {
-    x: f64,
-    y: f64,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 struct Speed {
     dx: f64,
     dy: f64,
-}
-
-impl Position {
-    fn distance(self, other: Position) -> f64 {
-        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2))
-            .sqrt()
-            .abs()
-    }
 }
 
 #[wasm_bindgen]

@@ -384,10 +384,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
             let wrapper = option_wrapped.as_ref().unwrap();
             let mut environment = wrapper.lock().unwrap();
-            match environment.game.status {
-                GameStatus::Won(_) => (), // do nothing, this is expected
-                _ => environment.game.status = GameStatus::Disconnected,
-            }
+            environment
+                .game
+                .disconnected()
+                .expect("Could not handle disconnection in game");
         }) as Box<dyn FnMut(ErrorEvent)>);
         ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
         onclose_callback.forget();
@@ -399,17 +399,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
             let wrapper = &option_wrapped.as_ref().unwrap();
             let mut environment = wrapper.lock().unwrap();
-            environment.game.status = GameStatus::Lobby;
             environment
                 .game
-                .send_msg(&Message::Join(
-                    environment
-                        .game
-                        .local_player()
-                        .expect("Internal error: could not get local player during init")
-                        .clone(),
-                ))
-                .expect("Join game message failed to send");
+                .connected()
+                .expect("Could not handle connected in game");
         }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();

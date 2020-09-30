@@ -438,8 +438,25 @@ impl Game {
         Ok(())
     }
 
-    pub fn send_msg(&self, message: &Message) -> Result<(), String> {
+    fn send_msg(&self, message: &Message) -> Result<(), String> {
         self.socket.send(&message)
+    }
+
+    pub fn connected(&mut self) -> Result<(), String> {
+        self.status = GameStatus::Lobby;
+        self.send_msg(&Message::Join(
+            self.local_player()
+                .expect("Internal error: could not get local player during init")
+                .clone(),
+        ))
+    }
+
+    pub fn disconnected(&mut self) -> Result<(), String> {
+        match self.status {
+            GameStatus::Won(_) => (), // do nothing, this is expected
+            _ => self.status = GameStatus::Disconnected,
+        };
+        Ok(())
     }
 
     pub fn handle_msg(&mut self, message: Message) -> Result<(), String> {

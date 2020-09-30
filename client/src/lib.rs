@@ -1,5 +1,5 @@
 mod utils;
-use rust_us_core::{Color, Position, Speed, Task, UUID};
+use rust_us_core::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -37,17 +37,6 @@ fn random_up_to(exclusive_max: f64) -> f64 {
     (js_sys::Math::random() * exclusive_max).floor()
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-struct Player {
-    uuid: UUID,
-    color: Color,
-    position: Position,
-    dead: bool,
-    impostor: bool,
-    tasks: Vec<Task>,
-    speed: Speed,
-}
-
 #[wasm_bindgen]
 struct Game {
     status: GameStatus,
@@ -62,15 +51,6 @@ struct Game {
     players: Vec<Player>,
     bodies: Vec<DeadBody>,
     socket: Box<dyn GameTx>,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
-enum GameStatus {
-    Connecting,
-    Lobby,
-    Playing,
-    Won(Team),
-    Disconnected,
 }
 
 trait GameTx {
@@ -94,33 +74,8 @@ impl GameTx for WebSocketTx {
     }
 }
 
-impl GameStatus {
-    fn finished(self) -> bool {
-        match self {
-            GameStatus::Connecting => false,
-            GameStatus::Lobby => false,
-            GameStatus::Playing => false,
-            GameStatus::Won(_) => true,
-            GameStatus::Disconnected => true,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
-enum Team {
-    Crew,
-    Impostors,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
-struct DeadBody {
-    color: Color,
-    position: Position,
-}
-
 // The state of user input at some point in time. i.e. what buttons is
 // the user holding down?
-#[wasm_bindgen]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct InputState {
     up: bool,
@@ -873,39 +828,4 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         *wrapped = Some(wrapper.game.clone());
     }
     Ok(wrapper)
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum Message {
-    Move(MoveMessage),
-    Killed(DeadBody),
-    FinishedTask(FinishedTask),
-    Join(Player),
-    Snapshot(Snapshot),
-    StartGame(StartGame),
-}
-
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-struct MoveMessage {
-    color: Color,
-    speed: Speed,
-    position: Position,
-}
-
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-struct FinishedTask {
-    color: Color,
-    index: usize,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Snapshot {
-    status: GameStatus,
-    bodies: Vec<DeadBody>,
-    players: Vec<Player>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct StartGame {
-    impostors: Vec<UUID>,
 }

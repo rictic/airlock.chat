@@ -67,6 +67,84 @@ pub struct Task {
     pub finished: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct Player {
+    pub uuid: UUID,
+    pub color: Color,
+    pub position: Position,
+    pub dead: bool,
+    pub impostor: bool,
+    pub tasks: Vec<Task>,
+    pub speed: Speed,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+pub struct DeadBody {
+    pub color: Color,
+    pub position: Position,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub enum GameStatus {
+    Connecting,
+    Lobby,
+    Playing,
+    Won(Team),
+    Disconnected,
+}
+
+impl GameStatus {
+    pub fn finished(self) -> bool {
+        match self {
+            GameStatus::Connecting => false,
+            GameStatus::Lobby => false,
+            GameStatus::Playing => false,
+            GameStatus::Won(_) => true,
+            GameStatus::Disconnected => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub enum Team {
+    Crew,
+    Impostors,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Message {
+    Move(MoveMessage),
+    Killed(DeadBody),
+    FinishedTask(FinishedTask),
+    Join(Player),
+    Snapshot(Snapshot),
+    StartGame(StartGame),
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+pub struct MoveMessage {
+    pub color: Color,
+    pub speed: Speed,
+    pub position: Position,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+pub struct FinishedTask {
+    pub color: Color,
+    pub index: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Snapshot {
+    pub status: GameStatus,
+    pub bodies: Vec<DeadBody>,
+    pub players: Vec<Player>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StartGame {
+    pub impostors: Vec<UUID>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

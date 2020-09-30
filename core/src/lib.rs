@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+// We don't use a real UUID impl because getting randomness in the browser
+// is different than the server, and I got a compiler error about it.
+pub type UUID = [u8; 16];
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Position {
     pub x: f64,
@@ -12,6 +16,55 @@ impl Position {
             .sqrt()
             .abs()
     }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Speed {
+    pub dx: f64,
+    pub dy: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Color {
+    Red,
+    Pink,
+    Blue,
+    Orange,
+    White,
+    Black,
+    Green,
+}
+
+impl Color {
+    pub fn all() -> &'static [Color] {
+        // Note: we assume this is sorted.
+        &[
+            Color::Red,
+            Color::Pink,
+            Color::Blue,
+            Color::Orange,
+            Color::White,
+            Color::Black,
+            Color::Green,
+        ]
+    }
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Color::Red => "#ff0102",
+            Color::Pink => "#ff69b4",
+            Color::Blue => "#1601ff",
+            Color::Orange => "#ffa502",
+            Color::White => "#ffffff",
+            Color::Black => "#000000",
+            Color::Green => "#01ff02",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Task {
+    pub position: Position,
+    pub finished: bool,
 }
 
 #[cfg(test)]

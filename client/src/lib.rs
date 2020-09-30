@@ -1,5 +1,5 @@
 mod utils;
-use rust_us_core::Position;
+use rust_us_core::{Color, Position, Speed, Task, UUID};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -26,61 +26,16 @@ extern "C" {
     fn log(s: &str);
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
-enum Color {
-    Red,
-    Pink,
-    Blue,
-    Orange,
-    White,
-    Black,
-    Green,
-}
-
-impl Color {
-    fn all() -> &'static [Color] {
-        // Note: we assume this is sorted.
-        &[
-            Color::Red,
-            Color::Pink,
-            Color::Blue,
-            Color::Orange,
-            Color::White,
-            Color::Black,
-            Color::Green,
-        ]
-    }
-    fn to_str(&self) -> &'static str {
-        match self {
-            Color::Red => "#ff0102",
-            Color::Pink => "#ff69b4",
-            Color::Blue => "#1601ff",
-            Color::Orange => "#ffa502",
-            Color::White => "#ffffff",
-            Color::Black => "#000000",
-            Color::Green => "#01ff02",
-        }
-    }
-
-    fn as_js_value(&self) -> JsValue {
-        JsValue::from_str(self.to_str())
-    }
-
-    fn as_semitransparant_js_value(&self) -> JsValue {
-        JsValue::from(format!("{}88", self.to_str()))
-    }
-
-    fn random() -> Color {
-        let idx = random_up_to(Color::all().len() as f64) as usize;
-        Color::all()[idx]
-    }
+// TODO: can we provide one implementation if compiled for wasm and another if not?
+// Is there a cross-compatible randomness library already out there?
+fn random_color() -> Color {
+    let idx = random_up_to(Color::all().len() as f64) as usize;
+    Color::all()[idx]
 }
 
 fn random_up_to(exclusive_max: f64) -> f64 {
     (js_sys::Math::random() * exclusive_max).floor()
 }
-
-type UUID = [u8; 16];
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 struct Player {
@@ -91,12 +46,6 @@ struct Player {
     impostor: bool,
     tasks: Vec<Task>,
     speed: Speed,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
-struct Speed {
-    dx: f64,
-    dy: f64,
 }
 
 #[wasm_bindgen]
@@ -147,12 +96,6 @@ enum Team {
 struct DeadBody {
     color: Color,
     position: Position,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
-struct Task {
-    position: Position,
-    finished: bool,
 }
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -231,9 +174,9 @@ impl Game {
             )
             .map_err(|_| "Failed to draw a circle.")?;
         let color = if player.dead {
-            player.color.as_semitransparant_js_value()
+            JsValue::from(format!("{}88", player.color.to_str()))
         } else {
-            player.color.as_js_value()
+            JsValue::from_str(player.color.to_str())
         };
         self.context.set_fill_style(&color);
         let stroke_color = if player.dead {
@@ -261,7 +204,8 @@ impl Game {
                 f64::consts::PI * 1.0,
             )
             .map_err(|_| "Failed to draw a circle.")?;
-        self.context.set_fill_style(&body.color.as_js_value());
+        self.context
+            .set_fill_style(&JsValue::from_str(body.color.to_str()));
         self.context.set_stroke_style(&JsValue::from("#000000"));
         self.context.fill();
         self.context.stroke();
@@ -468,7 +412,7 @@ impl Game {
     }
 
     fn activate_near(&mut self, position: Position) -> Result<(), JsValue> {
-        let mut closest_distance = self.kill_distance;
+        let mut closest_distance = self.task_distance;
         let local_player = match self.local_player_mut() {
             Some(player) => player,
             None => return Ok(()),
@@ -789,7 +733,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
     let starting_position_seed = js_sys::Math::random();
     let local_player = Player {
         uuid: my_uuid,
-        color: Color::random(),
+        color: random_color(),
         dead: false,
         position: Position {
             x: 275.0 + (100.0 * (starting_position_seed * 2.0 * f64::consts::PI).sin()),

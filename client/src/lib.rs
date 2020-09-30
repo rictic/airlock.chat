@@ -37,60 +37,33 @@ fn random_up_to(exclusive_max: f64) -> f64 {
     (js_sys::Math::random() * exclusive_max).floor()
 }
 
-#[wasm_bindgen]
 struct Game {
     status: GameStatus,
     speed: f64,
-    width: f64,
-    height: f64,
     kill_distance: f64,
     task_distance: f64,
     local_player_uuid: Option<UUID>,
     inputs: InputState,
-    context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
     bodies: Vec<DeadBody>,
     socket: Box<dyn GameTx>,
 }
 
-trait GameTx {
-    fn send(&self, message: &Message) -> Result<(), String>;
+struct Canvas {
+    width: f64,
+    height: f64,
+    context: web_sys::CanvasRenderingContext2d,
 }
 
-#[derive(Clone)]
-struct WebSocketTx {
-    socket: WebSocket,
-}
-
-impl GameTx for WebSocketTx {
-    fn send(&self, message: &Message) -> Result<(), String> {
-        let encoded = serde_json::to_string(&message)
-            .map_err(|_| JsValue::from_str("Unable to encode Message to json"))
-            .map_err(|e| format!("{:?}", e))?;
-        self.socket
-            .send_with_str(&encoded)
-            .map_err(|e| format!("{:?}", e))?;
-        Ok(())
+impl Canvas {
+    fn draw(&self, game: &Game) -> Option<String> {
+        match self.draw_internal(game) {
+            Ok(()) => None,
+            Err(e) => Some(format!("Error: {}", e)),
+        }
     }
-}
 
-// The state of user input at some point in time. i.e. what buttons is
-// the user holding down?
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-struct InputState {
-    up: bool,
-    down: bool,
-    left: bool,
-    right: bool,
-    kill: bool,
-    activate: bool,
-    report: bool,
-    play: bool,
-}
-
-#[wasm_bindgen]
-impl Game {
-    fn draw_internal(&self) -> Result<(), Box<dyn Error>> {
+    fn draw_internal(&self, game: &Game) -> Result<(), Box<dyn Error>> {
         let context = &self.context;
         context.clear_rect(0.0, 0.0, self.width, self.height);
         context.begin_path();
@@ -104,7 +77,7 @@ impl Game {
         context.set_fill_style(&JsValue::from_str("#358"));
         self.circle(275.0, 275.0, 75.0)?;
 
-        let show_dead_people = match self.local_player() {
+        let show_dead_people = match game.local_player() {
             None => true,
             Some(p) => p.dead || p.impostor,
         };
@@ -112,8 +85,8 @@ impl Game {
         // Draw tasks, then bodies, then players on top, so tasks are behind everything, then
         // bodies, then imps. That way imps can stand on top of bodies.
         // However maybe we should instead draw items from highest to lowest, vertically?
-        if let Some(local_player) = self.local_player() {
-            if self.status == GameStatus::Playing {
+        if let Some(local_player) = game.local_player() {
+            if game.status == GameStatus::Playing {
                 for task in local_player.tasks.iter() {
                     if task.finished {
                         continue;
@@ -122,10 +95,10 @@ impl Game {
                 }
             }
         }
-        for body in self.bodies.iter() {
+        for body in game.bodies.iter() {
             self.draw_body(*body)?;
         }
-        for player in self.players.iter() {
+        for player in game.players.iter() {
             if show_dead_people || !player.dead {
                 self.draw_player(player)?
             }
@@ -224,36 +197,45 @@ impl Game {
         self.context.fill();
         Ok(())
     }
+}
 
-    fn simulate_internal(&mut self, elapsed: f64) -> Result<(), &'static str> {
-        // elapsed is the time, in milliseconds, that has passed since the
-        // last time we simulated.
-        // By making our simulations relative to the amount of time that's passed,
-        // the game will progress the same regardless of the frame rate, which may
-        // vary between 30fps and 144fps even if our performance is perfect!
-        let time_steps_passed = elapsed / 16.0;
+trait GameTx {
+    fn send(&self, message: &Message) -> Result<(), String>;
+}
 
-        for player in self.players.iter_mut() {
-            let Speed { dx, dy } = player.speed;
-            player.position.x += dx * time_steps_passed;
-            player.position.y += dy * time_steps_passed;
-            // We don't handle inputs.q here because player position may be
-            // out of sync, but we _super_ don't want to let life or death
-            // get out of sync.
-        }
+#[derive(Clone)]
+struct WebSocketTx {
+    socket: WebSocket,
+}
 
+impl GameTx for WebSocketTx {
+    fn send(&self, message: &Message) -> Result<(), String> {
+        let encoded = serde_json::to_string(&message)
+            .map_err(|_| JsValue::from_str("Unable to encode Message to json"))
+            .map_err(|e| format!("{:?}", e))?;
+        self.socket
+            .send_with_str(&encoded)
+            .map_err(|e| format!("{:?}", e))?;
         Ok(())
     }
+}
 
-    // These params describe whether the player is currently holding down each
-    // of the buttons.
-    fn draw(&self) -> Option<String> {
-        match self.draw_internal() {
-            Ok(()) => None,
-            Err(e) => Some(format!("Error: {}", e)),
-        }
-    }
+// The state of user input at some point in time. i.e. what buttons is
+// the user holding down?
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct InputState {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+    kill: bool,
+    activate: bool,
+    report: bool,
+    play: bool,
+}
 
+#[wasm_bindgen]
+impl Game {
     // Is there a way to avoid duplicating this logic?
     fn local_player(&self) -> Option<&Player> {
         let local_player_uuid = self.local_player_uuid?;
@@ -273,6 +255,26 @@ impl Game {
             }
         }
         None
+    }
+
+    fn simulate_internal(&mut self, elapsed: f64) -> Result<(), &'static str> {
+        // elapsed is the time, in milliseconds, that has passed since the
+        // last time we simulated.
+        // By making our simulations relative to the amount of time that's passed,
+        // the game will progress the same regardless of the frame rate, which may
+        // vary between 30fps and 144fps even if our performance is perfect!
+        let time_steps_passed = elapsed / 16.0;
+
+        for player in self.players.iter_mut() {
+            let Speed { dx, dy } = player.speed;
+            player.position.x += dx * time_steps_passed;
+            player.position.y += dy * time_steps_passed;
+            // We don't handle inputs.q here because player position may be
+            // out of sync, but we _super_ don't want to let life or death
+            // get out of sync.
+        }
+
+        Ok(())
     }
 
     fn simulate(&mut self, elapsed: f64) -> Option<String> {
@@ -602,7 +604,12 @@ fn get_canvas_info() -> Result<CanvasInfo, Box<dyn Error>> {
 
 #[wasm_bindgen]
 pub struct GameWrapper {
-    game: Arc<Mutex<Game>>,
+    environment: Arc<Mutex<GameEnvironment>>,
+}
+
+struct GameEnvironment {
+    game: Game,
+    canvas: Canvas,
 }
 
 #[wasm_bindgen]
@@ -619,14 +626,14 @@ impl GameWrapper {
         activate: bool,
         play: bool,
     ) -> Result<(), JsValue> {
-        let mut game = self
-            .game
+        let mut environment = self
+            .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if game.status.finished() {
+        if environment.game.status.finished() {
             return Ok(());
         }
-        game.take_input(InputState {
+        environment.game.take_input(InputState {
             up,
             down,
             left,
@@ -639,34 +646,34 @@ impl GameWrapper {
     }
 
     pub fn simulate(&mut self, elapsed: f64) -> Result<Option<String>, JsValue> {
-        let mut game = self
-            .game
+        let mut environment = self
+            .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if game.status == GameStatus::Connecting {
+        if environment.game.status == GameStatus::Connecting {
             return Ok(None);
         }
-        if game.status == GameStatus::Disconnected {
+        if environment.game.status == GameStatus::Disconnected {
             return Ok(Some("Disconnected from server".to_string()));
         }
-        if let GameStatus::Won(team) = game.status {
+        if let GameStatus::Won(team) = environment.game.status {
             return Ok(Some(format!("{:?} win!", team)));
         }
-        Ok(game.simulate(elapsed))
+        Ok(environment.game.simulate(elapsed))
     }
 
     pub fn draw(&mut self) -> Result<Option<String>, JsValue> {
-        let game = self
-            .game
+        let environment = self
+            .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if game.status == GameStatus::Connecting {
+        if environment.game.status == GameStatus::Connecting {
             return Ok(None);
         }
-        if game.status == GameStatus::Disconnected {
+        if environment.game.status == GameStatus::Disconnected {
             return Ok(Some("Disconnected from server".to_string()));
         }
-        Ok(game.draw())
+        Ok(environment.canvas.draw(&environment.game))
     }
 }
 
@@ -725,7 +732,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         speed: Speed { dx: 0.0, dy: 0.0 },
     };
 
-    let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<Game>>>>> = Arc::new(Mutex::new(None));
+    let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameEnvironment>>>>> =
+        Arc::new(Mutex::new(None));
 
     {
         let wrapper_wrapper_clone = wrapper_wrapper.clone();
@@ -743,8 +751,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
                 console_log!("message from network: {:?}", message);
                 let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
                 let wrapper = option_wrapped.as_ref().unwrap();
-                let mut game = wrapper.lock().unwrap();
-                match game.handle_msg(message) {
+                let mut environment = wrapper.lock().unwrap();
+                match environment.game.handle_msg(message) {
                     Ok(()) => (),
                     Err(e) => {
                         console_log!("Error handling message {:?} – {:?}", strng, e);
@@ -770,10 +778,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             console_log!("websocket closed");
             let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
             let wrapper = option_wrapped.as_ref().unwrap();
-            let mut game = wrapper.lock().unwrap();
-            match game.status {
+            let mut environment = wrapper.lock().unwrap();
+            match environment.game.status {
                 GameStatus::Won(_) => (), // do nothing, this is expected
-                _ => game.status = GameStatus::Disconnected,
+                _ => environment.game.status = GameStatus::Disconnected,
             }
         }) as Box<dyn FnMut(ErrorEvent)>);
         ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
@@ -785,47 +793,55 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             console_log!("socket opened");
             let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
             let wrapper = &option_wrapped.as_ref().unwrap();
-            let mut game = wrapper.lock().unwrap();
-            game.status = GameStatus::Lobby;
-            game.send_msg(&Message::Join(
-                game.local_player()
-                    .expect("Internal error: could not get local player during init")
-                    .clone(),
-            ))
-            .expect("Join game message failed to send");
+            let mut environment = wrapper.lock().unwrap();
+            environment.game.status = GameStatus::Lobby;
+            environment
+                .game
+                .send_msg(&Message::Join(
+                    environment
+                        .game
+                        .local_player()
+                        .expect("Internal error: could not get local player during init")
+                        .clone(),
+                ))
+                .expect("Join game message failed to send");
         }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
     }
 
     let wrapper = GameWrapper {
-        game: Arc::new(Mutex::new(Game {
-            status: GameStatus::Connecting,
-            speed: 2.0,
-            context,
-            width,
-            height,
-            task_distance: 32.0,
-            kill_distance: 64.0,
-            inputs: InputState {
-                up: false,
-                down: false,
-                left: false,
-                right: false,
-                kill: false,
-                activate: false,
-                report: false,
-                play: false,
+        environment: Arc::new(Mutex::new(GameEnvironment {
+            game: Game {
+                status: GameStatus::Connecting,
+                speed: 2.0,
+                task_distance: 32.0,
+                kill_distance: 64.0,
+                inputs: InputState {
+                    up: false,
+                    down: false,
+                    left: false,
+                    right: false,
+                    kill: false,
+                    activate: false,
+                    report: false,
+                    play: false,
+                },
+                local_player_uuid: Some(my_uuid),
+                players: vec![local_player],
+                bodies: Vec::new(),
+                socket: Box::new(WebSocketTx { socket: ws }),
             },
-            local_player_uuid: Some(my_uuid),
-            players: vec![local_player],
-            bodies: Vec::new(),
-            socket: Box::new(WebSocketTx { socket: ws }),
+            canvas: Canvas {
+                context,
+                width,
+                height,
+            },
         })),
     };
     {
         let mut wrapped = wrapper_wrapper.lock().unwrap();
-        *wrapped = Some(wrapper.game.clone());
+        *wrapped = Some(wrapper.environment.clone());
     }
     Ok(wrapper)
 }

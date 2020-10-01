@@ -76,14 +76,20 @@ struct Player {
     position: Position,
     dead: bool,
     impostor: bool,
-    inputs: InputState,
     tasks: Vec<Task>,
+    speed: Speed,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 struct Position {
     x: f64,
     y: f64,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+struct Speed {
+    dx: f64,
+    dy: f64,
 }
 
 impl Position {
@@ -103,6 +109,7 @@ struct Game {
     kill_distance: f64,
     task_distance: f64,
     local_player_color: Option<Color>,
+    inputs: InputState,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
     bodies: Vec<DeadBody>,
@@ -277,20 +284,9 @@ impl Game {
         let time_steps_passed = elapsed / 16.0;
 
         for player in self.players.iter_mut() {
-            let inputs = player.inputs;
-            if inputs.up {
-                player.position.y -= self.speed * time_steps_passed
-            }
-            if inputs.down {
-                player.position.y += self.speed * time_steps_passed
-            }
-            if inputs.left {
-                player.position.x -= self.speed * time_steps_passed
-            }
-            if inputs.right {
-                player.position.x += self.speed * time_steps_passed
-            }
-
+            let Speed { dx, dy } = player.speed;
+            player.position.x += dx * time_steps_passed;
+            player.position.y += dy * time_steps_passed;
             // We don't handle inputs.q here because player position may be
             // out of sync, but we _super_ don't want to let life or death
             // get out of sync.
@@ -337,19 +333,21 @@ impl Game {
         }
     }
 
-    fn set_inputs(&mut self, new_input: InputState) -> Result<(), JsValue> {
+    // Take the given inputs from the local player
+    fn take_input(&mut self, new_input: InputState) -> Result<(), JsValue> {
+        let current_input = self.inputs;
         let player = match self.local_player_mut() {
             None => return Ok(()),
             Some(p) => p,
         };
-        if new_input == player.inputs {
+        if new_input == current_input {
             return Ok(()); // quick exit for the boring case
         }
         // Read the parts of the local player that we care about.
-        let is_killing = player.impostor && !player.inputs.kill && new_input.kill;
+        let is_killing = player.impostor && !current_input.kill && new_input.kill;
         let position = player.position;
-        let activating = !player.inputs.activate && new_input.activate;
-        player.inputs = new_input;
+        let activating = !current_input.activate && new_input.activate;
+        self.inputs = new_input;
         // ok, we're done touching player at this point. we redeclare it
         // below so we can use it again, next time mutably.
 
@@ -360,13 +358,41 @@ impl Game {
             self.activate_near(position)?;
         }
 
-        let player: &Player = self.local_player().unwrap();
-        self.send_msg(&Message::Move(MoveMessage {
-            color: player.color,
-            inputs: player.inputs,
-            current_position: player.position,
-        }))?;
+        let speed_changed: bool;
+        {
+            let new_speed = self.get_speed();
+            let player = self.local_player_mut().unwrap();
+            speed_changed = new_speed != player.speed;
+            player.speed = new_speed;
+        }
+
+        // This way we don't send a MoveMessage unless movement keys actually changed,
+        // reducing data leakage to HAXXORZ.
+        if speed_changed {
+            let player = self.local_player().unwrap();
+            self.send_msg(&Message::Move(MoveMessage {
+                color: player.color,
+                speed: player.speed,
+                position: player.position,
+            }))?;
+        }
         Ok(())
+    }
+
+    fn get_speed(&self) -> Speed {
+        let mut dx = 0.0;
+        let mut dy = 0.0;
+        if self.inputs.up && !self.inputs.down {
+            dy = -self.speed
+        } else if self.inputs.down {
+            dy = self.speed
+        }
+        if self.inputs.left && !self.inputs.right {
+            dx = -self.speed
+        } else if self.inputs.right {
+            dx = self.speed
+        }
+        Speed { dx, dy }
     }
 
     fn kill_player_near(&mut self, position: Position) -> Result<(), JsValue> {
@@ -457,8 +483,8 @@ impl Game {
             Message::Move(moved) => {
                 for player in self.players.iter_mut() {
                     if player.color == moved.color {
-                        player.inputs = moved.inputs;
-                        player.position = moved.current_position;
+                        player.speed = moved.speed;
+                        player.position = moved.position;
                     }
                 }
             }
@@ -517,15 +543,7 @@ fn make_player(color: Color) -> Player {
         position: Position { x: 0.0, y: 0.0 },
         impostor: false,
         tasks: vec![],
-        inputs: InputState {
-            up: false,
-            down: false,
-            left: false,
-            right: false,
-            kill: false,
-            report: false,
-            activate: false,
-        },
+        speed: Speed { dx: 0.0, dy: 0.0 },
     }
 }
 
@@ -551,7 +569,7 @@ impl GameWrapper {
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        game.set_inputs(InputState {
+        game.take_input(InputState {
             up,
             down,
             left,
@@ -633,6 +651,15 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             height,
             task_distance: 32.0,
             kill_distance: 64.0,
+            inputs: InputState {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+                kill: false,
+                activate: false,
+                report: false,
+            },
             local_player_color: Some(Color::random()),
             players,
             bodies: Vec::new(),
@@ -715,8 +742,8 @@ enum Message {
 #[derive(Serialize, Deserialize, Debug)]
 struct MoveMessage {
     color: Color,
-    inputs: InputState,
-    current_position: Position,
+    speed: Speed,
+    position: Position,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

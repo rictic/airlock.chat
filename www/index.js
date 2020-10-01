@@ -67,7 +67,7 @@ function average(arr) {
 }
 
 const knownButtons = new Set([
-    'w', 'a', 's', 'd', 'q', 'e', 'r', ' ',
+    'w', 'a', 's', 'd', 'q', 'e', 'r', ' ', 'p',
     'arrowup', 'arrowdown', 'arrowleft', 'arrowright'
 ]);
 const heldButtons = {};
@@ -79,7 +79,8 @@ function updateInput() {
   const kill = heldButtons['q'];
   const report = heldButtons['r'];
   const activate = heldButtons['e'] || heldButtons[' '];
-  game.set_inputs(up, down, left, right, kill, report, activate);
+  const play = heldButtons['p'];
+  game.set_inputs(up, down, left, right, kill, report, activate, play);
 }
 document.addEventListener('keydown', (ev) => {
   const key = ev.key.toLowerCase();

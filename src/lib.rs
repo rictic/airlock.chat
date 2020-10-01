@@ -410,7 +410,7 @@ impl Game {
     }
 
     fn activate_near(&mut self, position: Position) -> Result<(), JsValue> {
-        let mut closest_distance = self.kill_distance;
+        let mut closest_distance = self.task_distance;
         let local_player = match self.local_player_mut() {
             Some(player) => player,
             None => return Ok(()),

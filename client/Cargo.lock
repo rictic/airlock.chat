@@ -88,12 +88,21 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
+ "rust_us_core",
  "serde",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
  "wee_alloc",
+]
+
+[[package]]
+name = "rust_us_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

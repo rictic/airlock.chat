@@ -8,3 +8,5 @@ wasm-pack.log
 /www/node_modules
 
 /server/target/
+
+/core/target/

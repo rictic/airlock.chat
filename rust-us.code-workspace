@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "client"
+		},
+		{
+			"path": "core"
 		}
 	],
 	"settings": {}

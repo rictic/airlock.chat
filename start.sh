@@ -7,7 +7,7 @@ else
   (cd www && npm ci)
 fi
 
-(wasm-pack build && cd www && npm run start) &
+(cd client && wasm-pack build && cd ../www && npm run start) &
 cargo install cargo-watch
 (cd server && cargo watch -x run) &
-cargo watch -s 'wasm-pack build'
+(cd client && cargo watch -s 'wasm-pack build')

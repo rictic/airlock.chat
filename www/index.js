@@ -1,4 +1,4 @@
-import * as wasm from 'rust-us';
+import * as wasm from '../client/pkg/rust_us';
 
 const output = document.createElement('div');
 document.body.appendChild(output);

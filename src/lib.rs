@@ -32,6 +32,7 @@ enum Color {
     Orange,
     White,
     Black,
+    Green,
 }
 
 impl Color {
@@ -43,6 +44,7 @@ impl Color {
             Color::Orange => "#ffa502",
             Color::White => "#ffffff",
             Color::Black => "#000000",
+            Color::Green => "01ff02",
         }
     }
 
@@ -62,20 +64,22 @@ impl Color {
             2 => Color::Blue,
             3 => Color::Orange,
             4 => Color::White,
-            _ => Color::Black,
+            5 => Color::Black,
+            _ => Color::Green,
         }
     }
 }
 
 // impl rand::distributions::Distribution<Color> {}
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Player {
     color: Color,
     position: Position,
     dead: bool,
     impostor: bool,
     inputs: InputState,
+    tasks: Vec<Task>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -110,6 +114,12 @@ struct Game {
 struct DeadBody {
     color: Color,
     position: Position,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Task {
+    position: Position,
+    finished: bool,
 }
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -147,6 +157,14 @@ impl Game {
 
         // Draw bodies first, then players on top, so imps can stand on top of bodies.
         // However maybe we should instead draw items from highest to lowest, vertically?
+        if let Some(local_player) = self.local_player() {
+            for task in local_player.tasks.iter() {
+                if task.finished {
+                    continue;
+                }
+                self.draw_task(*task, local_player.impostor)?;
+            }
+        }
         for body in self.bodies.iter() {
             self.draw_body(*body)?;
         }
@@ -205,7 +223,35 @@ impl Game {
             )
             .map_err(|_| "Failed to draw a circle.")?;
         self.context.set_fill_style(&body.color.as_js_value());
+        self.context.set_stroke_style(&JsValue::from("#000000"));
         self.context.fill();
+        self.context.stroke();
+        Ok(())
+    }
+
+    fn draw_task(&self, task: Task, fake: bool) -> Result<(), &'static str> {
+        self.context.begin_path();
+        let len: f64 = 15.0;
+        let pos = task.position;
+        // drawing an equilateral triangle...
+        let height = (len.powf(2.0) - (len / 2.0).powf(2.0)).sqrt();
+        self.context.move_to(pos.x + (len / 2.0), pos.y);
+        self.context.line_to(pos.x, pos.y + height);
+        self.context.line_to(pos.x + len, pos.y + height);
+        self.context.line_to(pos.x + (len / 2.0), pos.y);
+        if fake {
+            self.context.set_fill_style(&JsValue::from("#ffa50244"));
+            self.context.set_stroke_style(&JsValue::from("#00000044"));
+        } else {
+            self.context.set_fill_style(&JsValue::from("#ffa502"));
+            self.context.set_stroke_style(&JsValue::from("#000000"));
+        }
+        self.context.fill();
+        self.context.stroke();
+        self.context.move_to(pos.x + (len / 2.0), pos.y + 3.0);
+        self.context.line_to(pos.x + (len / 2.0), pos.y + 9.0);
+        self.context.move_to(pos.x + (len / 2.0), pos.y + 10.0);
+        self.context.line_to(pos.x + (len / 2.0), pos.y + 12.0);
         self.context.stroke();
         Ok(())
     }
@@ -441,7 +487,8 @@ fn make_player(color: Color) -> Player {
         color,
         dead: false,
         position: Position { x: 0.0, y: 0.0 },
-        impostor: true, // oops all impostors!
+        impostor: false,
+        tasks: vec![],
         inputs: InputState {
             up: false,
             down: false,
@@ -499,22 +546,6 @@ impl GameWrapper {
 
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
-    let mut players = vec![
-        make_player(Color::Red),
-        make_player(Color::Pink),
-        make_player(Color::Blue),
-        make_player(Color::Orange),
-        make_player(Color::White),
-        make_player(Color::Black),
-    ];
-    let num_players = players.len() as f64;
-    for (i, player) in players.iter_mut().enumerate() {
-        // Place the players equidistant around the meeting table.
-        player.position = Position {
-            x: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin()),
-            y: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos()),
-        };
-    }
     let CanvasInfo {
         context,
         width,
@@ -522,6 +553,43 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
     } = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let ws = WebSocket::new("ws://localhost:3012")?;
+
+    let mut players = vec![
+        make_player(Color::Red),
+        make_player(Color::Pink),
+        make_player(Color::Blue),
+        make_player(Color::Orange),
+        make_player(Color::White),
+        make_player(Color::Black),
+        make_player(Color::Green),
+    ];
+    let num_players = players.len() as f64;
+    // Pick one at random to be the impostor.
+    players[(js_sys::Math::random() * num_players).floor() as usize].impostor = true;
+
+    for (i, player) in players.iter_mut().enumerate() {
+        // Place the players equidistant around the meeting table.
+        player.position = Position {
+            x: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin()),
+            y: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos()),
+        };
+        // Give everyone 6 random tasks.
+        for _ in 0..6 {
+            player.tasks.push(Task {
+                position: Position {
+                    x: (js_sys::Math::random() * width)
+                        .floor()
+                        .max(30.0)
+                        .min(width - 30.0),
+                    y: (js_sys::Math::random() * height)
+                        .floor()
+                        .max(30.0)
+                        .min(height - 30.0),
+                },
+                finished: false,
+            })
+        }
+    }
     let wrapper = GameWrapper {
         game: Arc::new(Mutex::new(Game {
             speed: 2.0,

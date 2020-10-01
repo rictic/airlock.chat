@@ -33,21 +33,29 @@ async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: Socke
     let (outgoing, incoming) = ws_stream.split();
 
     let broadcast_incoming = incoming.try_for_each(|msg| {
+        match &msg {
+            // Ignore these
+            Message::Close(_) => return future::ok(()),
+            Message::Ping(_) => return future::ok(()),
+            Message::Pong(_) => return future::ok(()),
+            // Forward these
+            Message::Text(_) => (),
+            Message::Binary(_) => (),
+        }
         println!(
-            "Received a message from {}: {}",
+            "Received a message from {}: {:?}",
             addr,
             msg.to_text().unwrap()
         );
         let peers = peer_map.lock().unwrap();
 
         // We want to broadcast the message to everyone except ourselves.
-        let broadcast_recipients = peers
-            .iter()
-            .filter(|(peer_addr, _)| peer_addr != &&addr)
-            .map(|(_, ws_sink)| ws_sink);
+        let broadcast_recipients = peers.iter().filter(|(peer_addr, _)| peer_addr != &&addr);
 
-        for recp in broadcast_recipients {
-            recp.unbounded_send(msg.clone()).unwrap();
+        for (recp_addr, recp) in broadcast_recipients {
+            if let Err(e) = recp.unbounded_send(msg.clone()) {
+                println!("Error sending from {} to {}: {}", addr, recp_addr, e);
+            }
         }
 
         future::ok(())
@@ -78,4 +86,66 @@ async fn main() -> Result<(), IoError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future::{AbortHandle, Abortable, Aborted};
+    use futures_util::SinkExt;
+    use std::error::Error;
+    use tokio_tungstenite::connect_async;
+
+    #[tokio::test]
+    async fn test_add() -> Result<(), Box<dyn Error>> {
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        let addr = "127.0.0.1:5678".to_string();
+        let try_socket = TcpListener::bind(&addr).await;
+        let mut listener = try_socket.expect("Failed to bind");
+        let future = Abortable::new(
+            tokio::spawn(async move {
+                let state = PeerMap::new(Mutex::new(HashMap::new()));
+                while let Ok((stream, addr)) = listener.accept().await {
+                    tokio::spawn(handle_connection(state.clone(), stream, addr));
+                }
+            }),
+            abort_registration,
+        );
+
+        let (mut client1, _) = connect_async("ws://127.0.0.1:5678/").await?;
+        let (mut client2, _) = connect_async("ws://127.0.0.1:5678/").await?;
+        let (mut client3, _) = connect_async("ws://127.0.0.1:5678/").await?;
+        client1.send(Message::Text("abc".to_string())).await?;
+        client2.send(Message::Text("def".to_string())).await?;
+        assert_eq!(
+            client2.next().await.ok_or("No error")??,
+            Message::Text("abc".to_string())
+        );
+        assert_eq!(
+            client3.next().await.ok_or("No error")??,
+            Message::Text("abc".to_string())
+        );
+        assert_eq!(
+            client3.next().await.ok_or("No error")??,
+            Message::Text("def".to_string())
+        );
+        assert_eq!(
+            client1.next().await.ok_or("No error")??,
+            Message::Text("def".to_string())
+        );
+        client1.close(None).await?;
+        client2.send(Message::Text("xyz".to_string())).await?;
+        assert_eq!(
+            client3.next().await.ok_or("No error")??,
+            Message::Text("xyz".to_string())
+        );
+
+        abort_handle.abort();
+        match future.await {
+            Ok(_) => panic!("Aborted server exited successfully"),
+            Err(a) => assert_eq!(a, Aborted),
+        }
+
+        Ok(())
+    }
 }

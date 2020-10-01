@@ -1,5 +1,4 @@
 mod utils;
-use rand::Rng;
 use rust_us_core::*;
 use std::error::Error;
 use std::f64;
@@ -314,30 +313,6 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let ws = WebSocket::new("ws://localhost:3012")?;
 
-    let my_uuid: UUID = rand::random();
-    let starting_position_seed: f64 = rand::random();
-    let local_player = Player {
-        uuid: my_uuid,
-        color: Color::random(),
-        dead: false,
-        position: Position {
-            x: 275.0 + (100.0 * (starting_position_seed * 2.0 * f64::consts::PI).sin()),
-            y: 275.0 + (100.0 * (starting_position_seed * 2.0 * f64::consts::PI).cos()),
-        },
-        impostor: false,
-        // 6 random tasks
-        tasks: (0..6)
-            .map(|_| Task {
-                position: Position {
-                    x: rand::thread_rng().gen_range(30.0, width - 30.0),
-                    y: rand::thread_rng().gen_range(30.0, height - 30.0),
-                },
-                finished: false,
-            })
-            .collect(),
-        speed: Speed { dx: 0.0, dy: 0.0 },
-    };
-
     let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameEnvironment>>>>> =
         Arc::new(Mutex::new(None));
 
@@ -411,26 +386,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
 
     let wrapper = GameWrapper {
         environment: Arc::new(Mutex::new(GameEnvironment {
-            game: Game {
-                status: GameStatus::Connecting,
-                speed: 2.0,
-                task_distance: 32.0,
-                kill_distance: 64.0,
-                inputs: InputState {
-                    up: false,
-                    down: false,
-                    left: false,
-                    right: false,
-                    kill: false,
-                    activate: false,
-                    report: false,
-                    play: false,
-                },
-                local_player_uuid: Some(my_uuid),
-                players: vec![local_player],
-                bodies: Vec::new(),
-                socket: Box::new(WebSocketTx { socket: ws }),
-            },
+            game: Game::new(width, height, Box::new(WebSocketTx { socket: ws })),
             canvas: Canvas {
                 context,
                 width,

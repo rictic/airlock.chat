@@ -682,6 +682,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "rust_us_core",
+ "serde_json",
  "tokio",
  "tokio-tungstenite",
  "tungstenite",

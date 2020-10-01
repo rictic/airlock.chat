@@ -123,6 +123,7 @@ pub enum Message {
     Join(Player),
     Snapshot(Snapshot),
     StartGame(StartGame),
+    Disconnected(Disconnected),
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
@@ -150,6 +151,11 @@ pub struct StartGame {
     pub impostors: Vec<UUID>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Disconnected {
+    pub uuid: UUID,
+}
+
 // The state of user input at some point in time. i.e. what buttons is
 // the user holding down?
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -169,7 +175,7 @@ pub struct Game {
     pub speed: f64,
     pub kill_distance: f64,
     pub task_distance: f64,
-    pub local_player_uuid: Option<UUID>,
+    pub local_player_uuid: UUID,
     pub inputs: InputState,
     pub players: Vec<Player>,
     pub bodies: Vec<DeadBody>,
@@ -181,11 +187,57 @@ pub trait GameTx {
 }
 
 impl Game {
+    pub fn new(width: f64, height: f64, socket: Box<dyn GameTx>) -> Game {
+        let my_uuid = rand::random();
+        let starting_position_seed: f64 = rand::random();
+        let local_player = Player {
+            uuid: my_uuid,
+            color: Color::random(),
+            dead: false,
+            position: Position {
+                x: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
+                y: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
+            },
+            impostor: false,
+            // 6 random tasks
+            tasks: (0..6)
+                .map(|_| Task {
+                    position: Position {
+                        x: rand::thread_rng().gen_range(30.0, width - 30.0),
+                        y: rand::thread_rng().gen_range(30.0, height - 30.0),
+                    },
+                    finished: false,
+                })
+                .collect(),
+            speed: Speed { dx: 0.0, dy: 0.0 },
+        };
+
+        Game {
+            status: GameStatus::Connecting,
+            speed: 2.0,
+            task_distance: 32.0,
+            kill_distance: 64.0,
+            inputs: InputState {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+                kill: false,
+                activate: false,
+                report: false,
+                play: false,
+            },
+            local_player_uuid: my_uuid,
+            players: vec![local_player],
+            bodies: Vec::new(),
+            socket,
+        }
+    }
+
     // Is there a way to avoid duplicating this logic?
     pub fn local_player(&self) -> Option<&Player> {
-        let local_player_uuid = self.local_player_uuid?;
         for player in self.players.iter() {
-            if player.uuid == local_player_uuid {
+            if player.uuid == self.local_player_uuid {
                 return Some(player);
             }
         }
@@ -193,9 +245,8 @@ impl Game {
     }
 
     fn local_player_mut(&mut self) -> Option<&mut Player> {
-        let local_player_uuid = self.local_player_uuid?;
         for player in self.players.iter_mut() {
-            if player.uuid == local_player_uuid {
+            if player.uuid == self.local_player_uuid {
                 return Some(player);
             }
         }
@@ -298,16 +349,11 @@ impl Game {
     }
 
     fn kill_player_near(&mut self, position: Position) -> Result<(), String> {
-        let local_player_uuid = match &self.local_player_uuid {
-            None => return Ok(()), // not controlling anything
-            Some(c) => *c,
-        };
-
         let mut killed_player: Option<DeadBody> = None;
         let mut closest_distance = self.kill_distance;
 
         for player in self.players.iter_mut() {
-            if player.impostor || player.uuid == local_player_uuid || player.dead {
+            if player.impostor || player.uuid == self.local_player_uuid || player.dead {
                 continue;
             }
 
@@ -525,6 +571,9 @@ impl Game {
                     bodies: self.bodies.clone(),
                     players: self.players.clone(),
                 }))?;
+            }
+            Message::Disconnected(disconnected) => {
+                self.players.retain(|p| p.uuid != disconnected.uuid);
             }
         }
         Ok(())

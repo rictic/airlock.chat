@@ -44,7 +44,7 @@ impl Color {
             Color::Orange => "#ffa502",
             Color::White => "#ffffff",
             Color::Black => "#000000",
-            Color::Green => "01ff02",
+            Color::Green => "#01ff02",
         }
     }
 
@@ -69,8 +69,6 @@ impl Color {
         }
     }
 }
-
-// impl rand::distributions::Distribution<Color> {}
 
 #[derive(Clone)]
 struct Player {
@@ -103,6 +101,7 @@ struct Game {
     width: f64,
     height: f64,
     kill_distance: f64,
+    task_distance: f64,
     local_player_color: Option<Color>,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
@@ -126,12 +125,14 @@ struct Task {
 // the user holding down?
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InputState {
-    pub up: bool,
-    pub down: bool,
-    pub left: bool,
-    pub right: bool,
-    pub q: bool,
+struct InputState {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+    kill: bool,
+    activate: bool,
+    report: bool,
 }
 
 #[wasm_bindgen]
@@ -298,36 +299,6 @@ impl Game {
         Ok(())
     }
 
-    fn kill_player_near(&mut self, position: Position) -> Result<Option<&Player>, &'static str> {
-        let local_player_color = match &self.local_player_color {
-            None => return Ok(None), // not controlling anything
-            Some(c) => *c,
-        };
-
-        let mut killed_player: Option<&mut Player> = None;
-        let mut closest_distance = self.kill_distance;
-
-        for player in self.players.iter_mut() {
-            // TODO(can't kill impostors)
-            if player.color == local_player_color || player.dead {
-                continue;
-            }
-
-            let distance = position.distance(player.position);
-            if distance < closest_distance {
-                killed_player = Some(player);
-                closest_distance = distance;
-            }
-        }
-
-        if let Some(player) = killed_player {
-            player.dead = true;
-            return Ok(Some(player));
-        }
-
-        Ok(None)
-    }
-
     // These params describe whether the player is currently holding down each
     // of the buttons.
     fn draw(&self) -> Option<String> {
@@ -367,7 +338,7 @@ impl Game {
     }
 
     fn set_inputs(&mut self, new_input: InputState) -> Result<(), JsValue> {
-        let player = match self.local_player() {
+        let player = match self.local_player_mut() {
             None => return Ok(()),
             Some(p) => p,
         };
@@ -375,38 +346,18 @@ impl Game {
             return Ok(()); // quick exit for the boring case
         }
         // Read the parts of the local player that we care about.
-        let is_killing = player.impostor && !player.inputs.q && new_input.q;
+        let is_killing = player.impostor && !player.inputs.kill && new_input.kill;
         let position = player.position;
+        let activating = !player.inputs.activate && new_input.activate;
+        player.inputs = new_input;
         // ok, we're done touching player at this point. we redeclare it
         // below so we can use it again, next time mutably.
 
-        // Now that we don't reference player any longer, the borrow checker
-        // is ok with us mutating self.
-        let mut kill_info: Option<DeadBody> = None;
         if is_killing {
-            // local player just hit the q button
-            let dead_player = self.kill_player_near(position).map_err(JsValue::from)?;
-            if let Some(dead_player) = dead_player {
-                kill_info = Some(DeadBody {
-                    position: dead_player.position,
-                    color: dead_player.color,
-                });
-            }
-            // this is also a good time to broadcast the kill
+            self.kill_player_near(position)?;
         }
-        // Move the killer on top of the new body.
-        {
-            let player = self
-                .local_player_mut()
-                .ok_or_else(|| JsValue::from("Did player kill themselves?"))?;
-            player.inputs = new_input;
-            if let Some(DeadBody { position, color: _ }) = kill_info {
-                player.position = position;
-            }
-        }
-        if let Some(body) = kill_info {
-            self.send_msg(&Message::Killed(body))?;
-            self.bodies.push(body);
+        if activating {
+            self.activate_near(position)?;
         }
 
         let player: &Player = self.local_player().unwrap();
@@ -415,6 +366,74 @@ impl Game {
             inputs: player.inputs,
             current_position: player.position,
         }))?;
+        Ok(())
+    }
+
+    fn kill_player_near(&mut self, position: Position) -> Result<(), JsValue> {
+        let local_player_color = match &self.local_player_color {
+            None => return Ok(()), // not controlling anything
+            Some(c) => *c,
+        };
+
+        let mut killed_player: Option<&mut Player> = None;
+        let mut closest_distance = self.kill_distance;
+
+        for player in self.players.iter_mut() {
+            // TODO(can't kill impostors)
+            if player.color == local_player_color || player.dead {
+                continue;
+            }
+
+            let distance = position.distance(player.position);
+            if distance < closest_distance {
+                killed_player = Some(player);
+                closest_distance = distance;
+            }
+        }
+
+        if let Some(player) = killed_player {
+            player.dead = true;
+            let player: &Player = player;
+            let body = DeadBody {
+                position: player.position,
+                color: player.color,
+            };
+            self.bodies.push(body);
+            self.send_msg(&Message::Killed(body))?;
+            // Move the killer on top of the new body.
+            if let Some(player) = self.local_player_mut() {
+                player.position = body.position;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn activate_near(&mut self, position: Position) -> Result<(), JsValue> {
+        let mut closest_distance = self.task_distance;
+        let local_player = match self.local_player_mut() {
+            Some(player) => player,
+            None => return Ok(()),
+        };
+        let is_imp = local_player.impostor;
+        let color = local_player.color;
+
+        let mut finished_task: Option<(usize, &mut Task)> = None;
+        for (i, task) in local_player.tasks.iter_mut().enumerate() {
+            // TODO(can't kill impostors)
+
+            let distance = position.distance(task.position);
+            if distance < closest_distance {
+                finished_task = Some((i, task));
+                closest_distance = distance;
+            }
+        }
+        if let Some((i, task)) = finished_task {
+            if !is_imp {
+                task.finished = true;
+                self.send_msg(&Message::FinishedTask(FinishedTask { color, index: i }))?;
+            }
+        }
         Ok(())
     }
 
@@ -440,6 +459,15 @@ impl Game {
                     if player.color == moved.color {
                         player.inputs = moved.inputs;
                         player.position = moved.current_position;
+                    }
+                }
+            }
+            Message::FinishedTask(FinishedTask { color, index }) => {
+                for player in self.players.iter_mut() {
+                    if player.color == *color {
+                        if let Some(task) = player.tasks.get_mut(*index) {
+                            task.finished = true;
+                        }
                     }
                 }
             }
@@ -494,7 +522,9 @@ fn make_player(color: Color) -> Player {
             down: false,
             left: false,
             right: false,
-            q: false,
+            kill: false,
+            report: false,
+            activate: false,
         },
     }
 }
@@ -506,13 +536,16 @@ pub struct GameWrapper {
 
 #[wasm_bindgen]
 impl GameWrapper {
+    #[allow(clippy::too_many_arguments)]
     pub fn set_inputs(
         &mut self,
         up: bool,
         down: bool,
         left: bool,
         right: bool,
-        q: bool,
+        kill: bool,
+        report: bool,
+        activate: bool,
     ) -> Result<(), JsValue> {
         let mut game = self
             .game
@@ -523,7 +556,9 @@ impl GameWrapper {
             down,
             left,
             right,
-            q,
+            kill,
+            report,
+            activate,
         })
     }
 
@@ -596,6 +631,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             context,
             width,
             height,
+            task_distance: 32.0,
             kill_distance: 64.0,
             local_player_color: Some(Color::random()),
             players,
@@ -657,13 +693,9 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             .set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
         onclose_callback.forget();
 
-        let cloned_ws = game.socket.clone();
+        // TODO: wait on socket to connect before returning.
         let onopen_callback = Closure::wrap(Box::new(move |_| {
             console_log!("socket opened");
-            match cloned_ws.send_with_str("ping") {
-                Ok(_) => (),
-                Err(err) => console_log!("error sending message: {:?}", err),
-            }
         }) as Box<dyn FnMut(JsValue)>);
         game.socket
             .set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
@@ -677,6 +709,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
 enum Message {
     Move(MoveMessage),
     Killed(DeadBody),
+    FinishedTask(FinishedTask),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -684,4 +717,10 @@ struct MoveMessage {
     color: Color,
     inputs: InputState,
     current_position: Position,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct FinishedTask {
+    color: Color,
+    index: usize,
 }

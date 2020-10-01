@@ -65,16 +65,20 @@ function average(arr) {
   return sum / arr.length;
 }
 
-const knownButtons = new Set(
-  ['w', 'a', 's', 'd', 'q', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+const knownButtons = new Set([
+    'w', 'a', 's', 'd', 'q', 'e', 'r', ' ',
+    'arrowup', 'arrowdown', 'arrowleft', 'arrowright'
+]);
 const heldButtons = {};
 function updateInput() {
   const up = heldButtons['w'] || heldButtons['arrowup'];
   const down = heldButtons['s'] || heldButtons['arrowdown'];
   const left = heldButtons['a'] || heldButtons['arrowleft'];
   const right = heldButtons['d'] || heldButtons['arrowright'];
-  const q = heldButtons['q'];
-  game.set_inputs(up, down, left, right, q);
+  const kill = heldButtons['q'];
+  const report = heldButtons['r'];
+  const activate = heldButtons['e'] || heldButtons[' '];
+  game.set_inputs(up, down, left, right, kill, report, activate);
 }
 document.addEventListener('keydown', (ev) => {
   const key = ev.key.toLowerCase();
@@ -83,7 +87,9 @@ document.addEventListener('keydown', (ev) => {
   }
   heldButtons[ev.key.toLowerCase()] = true;
   updateInput();
-  ev.preventDefault();
+  if (!(ev.ctrlKey || ev.metaKey || ev.altKey)) {
+    ev.preventDefault();
+  }
 });
 document.addEventListener('keyup', (ev) => {
   const key = ev.key.toLowerCase();

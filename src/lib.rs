@@ -1,5 +1,6 @@
 mod utils;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::f64;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ extern "C" {
     fn log(s: &str);
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
 enum Color {
     Red,
     Pink,
@@ -36,6 +37,18 @@ enum Color {
 }
 
 impl Color {
+    fn all() -> &'static [Color] {
+        // Note: we assume this is sorted.
+        &[
+            Color::Red,
+            Color::Pink,
+            Color::Blue,
+            Color::Orange,
+            Color::White,
+            Color::Black,
+            Color::Green,
+        ]
+    }
     fn to_str(&self) -> &'static str {
         match self {
             Color::Red => "#ff0102",
@@ -57,21 +70,16 @@ impl Color {
     }
 
     fn random() -> Color {
-        let rand = js_sys::Math::random();
-        match (rand * 6.0).floor() as u32 {
-            0 => Color::Red,
-            1 => Color::Pink,
-            2 => Color::Blue,
-            3 => Color::Orange,
-            4 => Color::White,
-            5 => Color::Black,
-            _ => Color::Green,
-        }
+        let idx = (js_sys::Math::random() * (Color::all().len() as f64)).floor() as usize;
+        Color::all()[idx]
     }
 }
 
-#[derive(Clone)]
+type UUID = [u8; 16];
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 struct Player {
+    uuid: UUID,
     color: Color,
     position: Position,
     dead: bool,
@@ -108,7 +116,7 @@ struct Game {
     height: f64,
     kill_distance: f64,
     task_distance: f64,
-    local_player_color: Option<Color>,
+    local_player_uuid: Option<UUID>,
     inputs: InputState,
     context: web_sys::CanvasRenderingContext2d,
     players: Vec<Player>,
@@ -122,7 +130,7 @@ struct DeadBody {
     position: Position,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 struct Task {
     position: Position,
     finished: bool,
@@ -306,9 +314,9 @@ impl Game {
 
     // Is there a way to avoid duplicating this logic?
     fn local_player(&self) -> Option<&Player> {
-        let local_player_color = self.local_player_color?;
+        let local_player_uuid = self.local_player_uuid?;
         for player in self.players.iter() {
-            if player.color == local_player_color {
+            if player.uuid == local_player_uuid {
                 return Some(player);
             }
         }
@@ -316,9 +324,9 @@ impl Game {
     }
 
     fn local_player_mut(&mut self) -> Option<&mut Player> {
-        let local_player_color = self.local_player_color?;
+        let local_player_uuid = self.local_player_uuid?;
         for player in self.players.iter_mut() {
-            if player.color == local_player_color {
+            if player.uuid == local_player_uuid {
                 return Some(player);
             }
         }
@@ -396,7 +404,7 @@ impl Game {
     }
 
     fn kill_player_near(&mut self, position: Position) -> Result<(), JsValue> {
-        let local_player_color = match &self.local_player_color {
+        let local_player_uuid = match &self.local_player_uuid {
             None => return Ok(()), // not controlling anything
             Some(c) => *c,
         };
@@ -405,8 +413,7 @@ impl Game {
         let mut closest_distance = self.kill_distance;
 
         for player in self.players.iter_mut() {
-            // TODO(can't kill impostors)
-            if player.color == local_player_color || player.dead {
+            if player.impostor || player.uuid == local_player_uuid || player.dead {
                 continue;
             }
 
@@ -446,8 +453,6 @@ impl Game {
 
         let mut finished_task: Option<(usize, &mut Task)> = None;
         for (i, task) in local_player.tasks.iter_mut().enumerate() {
-            // TODO(can't kill impostors)
-
             let distance = position.distance(task.position);
             if distance < closest_distance {
                 finished_task = Some((i, task));
@@ -464,13 +469,13 @@ impl Game {
     }
 
     fn send_msg(&self, message: &Message) -> Result<(), JsValue> {
-        let encoded = serde_json::to_string(message)
+        let encoded = serde_json::to_string(&message)
             .map_err(|_| JsValue::from_str("Unable to encode Message to json"))?;
         self.socket.send_with_str(&encoded)?;
         Ok(())
     }
 
-    fn handle_msg(&mut self, message: &Message) -> Result<(), JsValue> {
+    fn handle_msg(&mut self, message: Message) -> Result<(), JsValue> {
         match message {
             Message::Killed(body) => {
                 for player in self.players.iter_mut() {
@@ -478,7 +483,7 @@ impl Game {
                         player.dead = true;
                     }
                 }
-                self.bodies.push(*body);
+                self.bodies.push(body);
             }
             Message::Move(moved) => {
                 for player in self.players.iter_mut() {
@@ -490,12 +495,53 @@ impl Game {
             }
             Message::FinishedTask(FinishedTask { color, index }) => {
                 for player in self.players.iter_mut() {
-                    if player.color == *color {
-                        if let Some(task) = player.tasks.get_mut(*index) {
+                    if player.color == color {
+                        if let Some(task) = player.tasks.get_mut(index) {
                             task.finished = true;
                         }
                     }
                 }
+            }
+            Message::Snapshot(Snapshot { bodies, players }) => {
+                // This is a sloppy kind of consensus that isn't guaranteed to converge.
+                // Easiest way to resolve this is to make the server smarter, but that will
+                // involve learning tokio D:
+                self.bodies = bodies;
+                self.players = players;
+            }
+            Message::Join(mut player) => {
+                for p in self.players.iter() {
+                    if p.uuid == player.uuid {
+                        return Ok(()); // we know about this player already
+                    }
+                }
+                // ok, it's a new player, and we have room for them. if their color is
+                // already taken, give them a new one.
+                let taken_colors: BTreeSet<Color> = self.players.iter().map(|p| p.color).collect();
+                let add_player;
+                if taken_colors.contains(&player.color) {
+                    match Color::all().iter().find(|c| !taken_colors.contains(c)) {
+                        None => {
+                            add_player = false; // we can't add this player, all colors are taken!
+                        }
+                        Some(c) => {
+                            add_player = true;
+                            player.color = *c;
+                        }
+                    }
+                } else {
+                    // player's color wasn't taken, they're good to go!
+                    add_player = true;
+                }
+                if add_player {
+                    // We've added the new player (possibly with a new color)
+                    self.players.push(player);
+                }
+                // Send out a snapshot to catch the new client up, whether or not they're playing.
+                self.send_msg(&Message::Snapshot(Snapshot {
+                    bodies: self.bodies.clone(),
+                    players: self.players.clone(),
+                }))?;
             }
         }
         Ok(())
@@ -534,17 +580,6 @@ fn get_canvas_info() -> Result<CanvasInfo, Box<dyn Error>> {
         width: canvas.width().into(),
         height: canvas.height().into(),
     })
-}
-
-fn make_player(color: Color) -> Player {
-    Player {
-        color,
-        dead: false,
-        position: Position { x: 0.0, y: 0.0 },
-        impostor: false,
-        tasks: vec![],
-        speed: Speed { dx: 0.0, dy: 0.0 },
-    }
 }
 
 #[wasm_bindgen]
@@ -597,6 +632,10 @@ impl GameWrapper {
     }
 }
 
+pub fn random_byte() -> u8 {
+    (js_sys::Math::random() * 256.0).floor() as u8
+}
+
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
     let CanvasInfo {
@@ -607,28 +646,37 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let ws = WebSocket::new("ws://localhost:3012")?;
 
-    let mut players = vec![
-        make_player(Color::Red),
-        make_player(Color::Pink),
-        make_player(Color::Blue),
-        make_player(Color::Orange),
-        make_player(Color::White),
-        make_player(Color::Black),
-        make_player(Color::Green),
+    let my_uuid: UUID = [
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
+        random_byte(),
     ];
-    let num_players = players.len() as f64;
-    // Pick one at random to be the impostor.
-    players[(js_sys::Math::random() * num_players).floor() as usize].impostor = true;
-
-    for (i, player) in players.iter_mut().enumerate() {
-        // Place the players equidistant around the meeting table.
-        player.position = Position {
-            x: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).sin()),
-            y: 275.0 + (100.0 * ((i as f64) / num_players * 2.0 * f64::consts::PI).cos()),
-        };
-        // Give everyone 6 random tasks.
-        for _ in 0..6 {
-            player.tasks.push(Task {
+    let starting_position_seed = js_sys::Math::random();
+    let local_player = Player {
+        uuid: my_uuid,
+        color: Color::random(),
+        dead: false,
+        position: Position {
+            x: 275.0 + (100.0 * (starting_position_seed * 2.0 * f64::consts::PI).sin()),
+            y: 275.0 + (100.0 * (starting_position_seed * 2.0 * f64::consts::PI).cos()),
+        },
+        impostor: false,
+        // 6 random tasks
+        tasks: (0..6)
+            .map(|_| Task {
                 position: Position {
                     x: (js_sys::Math::random() * width)
                         .floor()
@@ -641,8 +689,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
                 },
                 finished: false,
             })
-        }
-    }
+            .collect(),
+        speed: Speed { dx: 0.0, dy: 0.0 },
+    };
+
     let wrapper = GameWrapper {
         game: Arc::new(Mutex::new(Game {
             speed: 2.0,
@@ -660,8 +710,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
                 activate: false,
                 report: false,
             },
-            local_player_color: Some(Color::random()),
-            players,
+            local_player_uuid: Some(my_uuid),
+            players: vec![local_player],
             bodies: Vec::new(),
             socket: ws,
         })),
@@ -689,7 +739,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
                 match game_clone
                     .lock()
                     .expect("Internal error: could not get a lock on the game")
-                    .handle_msg(&message)
+                    .handle_msg(message)
                 {
                     Ok(()) => (),
                     Err(e) => {
@@ -721,8 +771,18 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         onclose_callback.forget();
 
         // TODO: wait on socket to connect before returning.
+        let game_clone = wrapper.game.clone();
         let onopen_callback = Closure::wrap(Box::new(move |_| {
             console_log!("socket opened");
+            let game = game_clone
+                .lock()
+                .expect("Internal error: could not get a lock on the game");
+            game.send_msg(&Message::Join(
+                game.local_player()
+                    .expect("Internal error: could not get local player during init")
+                    .clone(),
+            ))
+            .expect("Join game message failed to send");
         }) as Box<dyn FnMut(JsValue)>);
         game.socket
             .set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
@@ -737,6 +797,8 @@ enum Message {
     Move(MoveMessage),
     Killed(DeadBody),
     FinishedTask(FinishedTask),
+    Join(Player),
+    Snapshot(Snapshot),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -750,4 +812,10 @@ struct MoveMessage {
 struct FinishedTask {
     color: Color,
     index: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Snapshot {
+    bodies: Vec<DeadBody>,
+    players: Vec<Player>,
 }

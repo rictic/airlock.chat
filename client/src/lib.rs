@@ -31,14 +31,14 @@ struct Canvas {
 }
 
 impl Canvas {
-    fn draw(&self, game: &Game) -> Option<String> {
+    fn draw(&self, game: &GameAsPlayer) -> Option<String> {
         match self.draw_internal(game) {
             Ok(()) => None,
             Err(e) => Some(format!("Error: {}", e)),
         }
     }
 
-    fn draw_internal(&self, game: &Game) -> Result<(), Box<dyn Error>> {
+    fn draw_internal(&self, game: &GameAsPlayer) -> Result<(), Box<dyn Error>> {
         let context = &self.context;
         context.clear_rect(0.0, 0.0, self.width, self.height);
         context.begin_path();
@@ -61,7 +61,7 @@ impl Canvas {
         // bodies, then imps. That way imps can stand on top of bodies.
         // However maybe we should instead draw items from highest to lowest, vertically?
         if let Some(local_player) = game.local_player() {
-            if game.status == GameStatus::Playing {
+            if game.game.status == GameStatus::Playing {
                 for task in local_player.tasks.iter() {
                     if task.finished {
                         continue;
@@ -70,10 +70,10 @@ impl Canvas {
                 }
             }
         }
-        for body in game.bodies.iter() {
+        for body in game.game.bodies.iter() {
             self.draw_body(*body)?;
         }
-        for player in game.players.iter() {
+        for player in game.game.players.iter() {
             if show_dead_people || !player.dead {
                 self.draw_player(player)?
             }
@@ -180,7 +180,7 @@ struct WebSocketTx {
 }
 
 impl GameTx for WebSocketTx {
-    fn send(&self, message: &Message) -> Result<(), String> {
+    fn send(&self, message: &ClientToServerMessage) -> Result<(), String> {
         let encoded = serde_json::to_string(&message)
             .map_err(|_| JsValue::from_str("Unable to encode Message to json"))
             .map_err(|e| format!("{:?}", e))?;
@@ -191,15 +191,7 @@ impl GameTx for WebSocketTx {
     }
 }
 
-struct CanvasInfo {
-    // The 2d rendering context
-    context: web_sys::CanvasRenderingContext2d,
-    // Dimensions of the canvas (for now we assume this won't change)
-    width: f64,
-    height: f64,
-}
-
-fn get_canvas_info() -> Result<CanvasInfo, Box<dyn Error>> {
+fn get_canvas_info() -> Result<web_sys::CanvasRenderingContext2d, Box<dyn Error>> {
     let document = web_sys::window()
         .ok_or("Could not get window")?
         .document()
@@ -218,11 +210,7 @@ fn get_canvas_info() -> Result<CanvasInfo, Box<dyn Error>> {
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .map_err(|_| "Returned value was not a CanvasRenderingContext2d")?;
 
-    Ok(CanvasInfo {
-        context,
-        width: canvas.width().into(),
-        height: canvas.height().into(),
-    })
+    Ok(context)
 }
 
 #[wasm_bindgen]
@@ -231,7 +219,7 @@ pub struct GameWrapper {
 }
 
 struct GameEnvironment {
-    game: Game,
+    game: GameAsPlayer,
     canvas: Canvas,
 }
 
@@ -253,7 +241,7 @@ impl GameWrapper {
             .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if environment.game.status.finished() {
+        if environment.game.game.status.finished() {
             return Ok(());
         }
         environment
@@ -276,16 +264,16 @@ impl GameWrapper {
             .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if environment.game.status == GameStatus::Connecting {
+        if environment.game.game.status == GameStatus::Connecting {
             return Ok(None);
         }
-        if environment.game.status == GameStatus::Disconnected {
+        if environment.game.game.status == GameStatus::Disconnected {
             return Ok(Some("Disconnected from server".to_string()));
         }
-        if let GameStatus::Won(team) = environment.game.status {
+        if let GameStatus::Won(team) = environment.game.game.status {
             return Ok(Some(format!("{:?} win!", team)));
         }
-        Ok(environment.game.simulate(elapsed))
+        Ok(environment.game.game.simulate(elapsed))
     }
 
     pub fn draw(&mut self) -> Result<Option<String>, JsValue> {
@@ -293,10 +281,10 @@ impl GameWrapper {
             .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if environment.game.status == GameStatus::Connecting {
+        if environment.game.game.status == GameStatus::Connecting {
             return Ok(None);
         }
-        if environment.game.status == GameStatus::Disconnected {
+        if environment.game.game.status == GameStatus::Disconnected {
             return Ok(Some("Disconnected from server".to_string()));
         }
         Ok(environment.canvas.draw(&environment.game))
@@ -305,14 +293,18 @@ impl GameWrapper {
 
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
-    let CanvasInfo {
-        context,
-        width,
-        height,
-    } = get_canvas_info()
+    let context = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let ws = WebSocket::new("ws://localhost:3012")?;
 
+    // Ok, this is pretty crazy, but I can explain.
+    // We need to set up the websocket callbacks using wasm_bindgen for the initial connection,
+    // and handling messages, and disconnecting.
+    // All of the actual logic happens inside of Game.
+    // The callbacks need to access the Game.
+    // Once we hand the WebSocket to the Game then it owns it, so we have to do our websocket setup
+    // before creating the game, but we need to access the game inside the callbacks...
+    // So here we are.
     let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameEnvironment>>>>> =
         Arc::new(Mutex::new(None));
 
@@ -322,7 +314,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             // Starting with assuming text messages. Can make efficient later (bson?).
             if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
                 let strng: String = txt.into();
-                let message: Message = match serde_json::from_str(&strng) {
+                let message: ServerToClientMessage = match serde_json::from_str(&strng) {
                     Ok(m) => m,
                     Err(e) => {
                         console_log!("Unable to deserialize {:?} – {:?}", strng, e);
@@ -378,7 +370,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             environment
                 .game
                 .connected()
-                .expect("Could not handle disconnection in game");
+                .expect("Could not handle game.connected()");
         }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
@@ -386,11 +378,11 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
 
     let wrapper = GameWrapper {
         environment: Arc::new(Mutex::new(GameEnvironment {
-            game: Game::new(width, height, Box::new(WebSocketTx { socket: ws })),
+            game: GameAsPlayer::new(Box::new(WebSocketTx { socket: ws })),
             canvas: Canvas {
                 context,
-                width,
-                height,
+                width: WIDTH,
+                height: HEIGHT,
             },
         })),
     };

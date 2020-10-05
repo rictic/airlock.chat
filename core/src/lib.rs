@@ -234,19 +234,8 @@ pub struct InputState {
 pub struct GameAsPlayer {
     my_uuid: UUID,
     inputs: InputState,
-    pub game: Game,
+    pub state: GameState,
     socket: Box<dyn GameTx>,
-}
-
-// The full game state
-#[derive(PartialEq, Clone, Debug)]
-pub struct Game {
-    pub status: GameStatus,
-    pub speed: f64,
-    pub kill_distance: f64,
-    pub task_distance: f64,
-    pub players: Vec<Player>,
-    pub bodies: Vec<DeadBody>,
 }
 
 pub trait GameTx {
@@ -273,7 +262,7 @@ impl GameAsPlayer {
         };
 
         GameAsPlayer {
-            game: Game::new(vec![local_player]),
+            state: GameState::new(vec![local_player]),
             inputs: InputState {
                 up: false,
                 down: false,
@@ -291,11 +280,11 @@ impl GameAsPlayer {
 
     // Is there a way to avoid duplicating the logic between local_player and local_player_mut?
     pub fn local_player(&self) -> Option<&Player> {
-        self.game.get_player(self.my_uuid)
+        self.state.get_player(self.my_uuid)
     }
 
     fn local_player_mut(&mut self) -> Option<&mut Player> {
-        self.game.get_player_mut(self.my_uuid)
+        self.state.get_player_mut(self.my_uuid)
     }
 
     // Take the given inputs from the local player
@@ -313,7 +302,7 @@ impl GameAsPlayer {
         let position = player.position;
         let activating = !current_input.activate && new_input.activate;
         let starting_play =
-            self.game.status == GameStatus::Lobby && !current_input.play && new_input.play;
+            self.state.status == GameStatus::Lobby && !current_input.play && new_input.play;
         self.inputs = new_input;
         // ok, we're done touching player at this point. we redeclare it
         // below so we can use it again, next time mutably.
@@ -352,23 +341,23 @@ impl GameAsPlayer {
         let mut dx = 0.0;
         let mut dy = 0.0;
         if self.inputs.up && !self.inputs.down {
-            dy = -self.game.speed
+            dy = -self.state.speed
         } else if self.inputs.down {
-            dy = self.game.speed
+            dy = self.state.speed
         }
         if self.inputs.left && !self.inputs.right {
-            dx = -self.game.speed
+            dx = -self.state.speed
         } else if self.inputs.right {
-            dx = self.game.speed
+            dx = self.state.speed
         }
         Speed { dx, dy }
     }
 
     fn kill_player_near(&mut self, position: Position) -> Result<(), String> {
         let mut killed_player: Option<DeadBody> = None;
-        let mut closest_distance = self.game.kill_distance;
+        let mut closest_distance = self.state.kill_distance;
 
-        for player in self.game.players.iter_mut() {
+        for player in self.state.players.iter_mut() {
             if player.impostor || player.uuid == self.my_uuid || player.dead {
                 continue;
             }
@@ -384,7 +373,7 @@ impl GameAsPlayer {
         }
 
         if let Some(body) = killed_player {
-            self.game.note_death(body)?;
+            self.state.note_death(body)?;
             self.socket.send(&ClientToServerMessage::Killed(body))?;
             // Move the killer on top of the new body.
             if let Some(player) = self.local_player_mut() {
@@ -396,7 +385,7 @@ impl GameAsPlayer {
     }
 
     fn activate_near(&mut self, position: Position) -> Result<(), String> {
-        let mut closest_distance = self.game.task_distance;
+        let mut closest_distance = self.state.task_distance;
         let local_player = match self.local_player_mut() {
             Some(player) => player,
             None => return Ok(()),
@@ -413,7 +402,7 @@ impl GameAsPlayer {
         }
         if let Some(finished_task) = finished_task {
             if !is_imp {
-                self.game.note_finished_task(self.my_uuid, finished_task)?;
+                self.state.note_finished_task(self.my_uuid, finished_task)?;
                 self.socket
                     .send(&ClientToServerMessage::FinishedTask(finished_task))?;
             }
@@ -422,7 +411,7 @@ impl GameAsPlayer {
     }
 
     pub fn connected(&mut self) -> Result<(), String> {
-        self.game.status = GameStatus::Lobby;
+        self.state.status = GameStatus::Lobby;
         self.socket.send(&ClientToServerMessage::Join(
             self.local_player()
                 .expect("Internal error: could not get local player during init")
@@ -431,15 +420,15 @@ impl GameAsPlayer {
     }
 
     pub fn disconnected(&mut self) -> Result<(), String> {
-        match self.game.status {
+        match self.state.status {
             GameStatus::Won(_) => (), // do nothing, this is expected
-            _ => self.game.status = GameStatus::Disconnected,
+            _ => self.state.status = GameStatus::Disconnected,
         };
         Ok(())
     }
 
     pub fn handle_msg(&mut self, message: ServerToClientMessage) -> Result<(), String> {
-        if self.game.status.finished() {
+        if self.state.status.finished() {
             return Ok(()); // Nothing more to say. Refresh for a new game!
         }
         match message {
@@ -449,9 +438,9 @@ impl GameAsPlayer {
                 players,
             }) => {
                 println!("{:?} received snapshot.", self.my_uuid);
-                self.game.status = status;
-                self.game.bodies = bodies;
-                self.game.players = players;
+                self.state.status = status;
+                self.state.bodies = bodies;
+                self.state.players = players;
             }
         }
         Ok(())
@@ -459,20 +448,31 @@ impl GameAsPlayer {
 
     fn start(&mut self) -> Result<(), String> {
         // todo, pick this on the server
-        let impostor_index = rand::thread_rng().gen_range(0, self.game.players.len());
-        let impostor = &self.game.players[impostor_index];
+        let impostor_index = rand::thread_rng().gen_range(0, self.state.players.len());
+        let impostor = &self.state.players[impostor_index];
         let impostors = vec![impostor.uuid];
         let start_data = StartGame { impostors };
-        self.game.note_game_started(&start_data)?;
+        self.state.note_game_started(&start_data)?;
         self.socket
             .send(&ClientToServerMessage::StartGame(start_data))?;
         Ok(())
     }
 }
 
-impl Game {
-    pub fn new(players: Vec<Player>) -> Game {
-        Game {
+// The full game state
+#[derive(PartialEq, Clone, Debug)]
+pub struct GameState {
+    pub status: GameStatus,
+    pub speed: f64,
+    pub kill_distance: f64,
+    pub task_distance: f64,
+    pub players: Vec<Player>,
+    pub bodies: Vec<DeadBody>,
+}
+
+impl GameState {
+    pub fn new(players: Vec<Player>) -> GameState {
+        GameState {
             status: GameStatus::Connecting,
             speed: 2.0,
             task_distance: 32.0,
@@ -595,7 +595,7 @@ impl Game {
 // Useful so that we can implement a real game server with web sockets, and the test
 // game server, and potentially a future peer to peer in-client server.
 pub struct GameServer {
-    game: Game,
+    state: GameState,
     broadcaster: Box<dyn Broadcaster>,
 }
 
@@ -611,19 +611,19 @@ pub trait Broadcaster: Send {
 impl GameServer {
     pub fn new(broadcaster: Box<dyn Broadcaster>) -> GameServer {
         let mut gs = GameServer {
-            game: Game::new(vec![]),
+            state: GameState::new(vec![]),
             broadcaster,
         };
-        gs.game.status = GameStatus::Lobby;
+        gs.state.status = GameStatus::Lobby;
         gs
     }
 
     pub fn simulate(&mut self, elapsed: f64) {
-        self.game.simulate(elapsed);
+        self.state.simulate(elapsed);
     }
 
     pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
-        self.game.players.retain(|p| p.uuid != disconnected_player);
+        self.state.players.retain(|p| p.uuid != disconnected_player);
         self.broadcast_snapshot()?;
         Ok(())
     }
@@ -636,19 +636,19 @@ impl GameServer {
         println!("Game server handling {:?}", message);
         match message {
             ClientToServerMessage::StartGame(start) => {
-                self.game.note_game_started(&start)?;
+                self.state.note_game_started(&start)?;
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::Killed(body) => {
-                self.game.note_death(body)?;
+                self.state.note_death(body)?;
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::FinishedTask(finished) => {
-                self.game.note_finished_task(sender, finished)?;
+                self.state.note_finished_task(sender, finished)?;
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::Move(moved) => {
-                for player in self.game.players.iter_mut() {
+                for player in self.state.players.iter_mut() {
                     if player.uuid == sender {
                         player.speed = moved.speed;
                         player.position = moved.position;
@@ -657,8 +657,8 @@ impl GameServer {
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::Join(mut player) => {
-                if self.game.status == GameStatus::Lobby {
-                    for p in self.game.players.iter() {
+                if self.state.status == GameStatus::Lobby {
+                    for p in self.state.players.iter() {
                         if p.uuid == player.uuid {
                             return Ok(()); // we know about this player already
                         }
@@ -666,7 +666,7 @@ impl GameServer {
                     // ok, it's a new player, and we have room for them. if their color is
                     // already taken, give them a new one.
                     let taken_colors: BTreeSet<Color> =
-                        self.game.players.iter().map(|p| p.color).collect();
+                        self.state.players.iter().map(|p| p.color).collect();
                     let add_player;
                     if taken_colors.contains(&player.color) {
                         match Color::all().iter().find(|c| !taken_colors.contains(c)) {
@@ -684,7 +684,7 @@ impl GameServer {
                     }
                     if add_player {
                         // We've added the new player (possibly with a new color)
-                        self.game.players.push(player);
+                        self.state.players.push(player);
                     }
                 }
 
@@ -698,9 +698,9 @@ impl GameServer {
     fn broadcast_snapshot(&self) -> Result<(), Box<dyn Error>> {
         self.broadcaster
             .broadcast(&ServerToClientMessage::Snapshot(Snapshot {
-                status: self.game.status,
-                bodies: self.game.bodies.clone(),
-                players: self.game.players.clone(),
+                status: self.state.status,
+                bodies: self.state.bodies.clone(),
+                players: self.state.players.clone(),
             }))?;
         Ok(())
     }
@@ -825,21 +825,21 @@ mod tests {
         fn expect_everyone_agrees_on_game_state(
             &self,
             expected_num_players: usize,
-        ) -> Result<Game, Box<dyn Error>> {
-            let server_state = self.game_server.game.clone();
+        ) -> Result<GameState, Box<dyn Error>> {
+            let server_state = self.game_server.state.clone();
             assert_eq!(self.players.len(), expected_num_players);
             for (_, game_as_player) in self.players.iter() {
                 // Will eventually need to customize this more, because players will
                 // only know a subset.
-                assert_eq!(&server_state, &game_as_player.game);
+                assert_eq!(&server_state, &game_as_player.state);
             }
             Ok(server_state)
         }
 
         fn time_passes(&mut self, elapsed: f64) {
-            self.game_server.game.simulate(elapsed);
+            self.game_server.state.simulate(elapsed);
             for (_, player) in self.players.iter_mut() {
-                player.game.simulate(elapsed);
+                player.state.simulate(elapsed);
             }
         }
 
@@ -979,7 +979,7 @@ mod tests {
 
         let player_positions: HashMap<UUID, Position> = env
             .game_server
-            .game
+            .state
             .players
             .iter()
             .map(|p| (p.uuid, p.position))

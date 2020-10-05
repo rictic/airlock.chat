@@ -24,10 +24,7 @@ Also this server must be run from the server directory."
     );
   }
   let f1 = tokio::spawn(serve_websocket(([0, 0, 0, 0], 3012).into()));
-  let f2 = tokio::spawn(serve_static_files(
-    ([0, 0, 0, 0], 3000).into(),
-    path.clone(),
-  ));
+  let f2 = tokio::spawn(serve_static_files(([0, 0, 0, 0], 80).into(), path.clone()));
   let (r1, r2) = join!(f1, f2);
   r1?;
   match r2? {

@@ -295,7 +295,11 @@ impl GameWrapper {
 pub fn make_game() -> Result<GameWrapper, JsValue> {
     let context = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
-    let ws = WebSocket::new("ws://localhost:3012")?;
+    let hostname = web_sys::window()
+        .ok_or("no window")?
+        .location()
+        .hostname()?;
+    let ws = WebSocket::new(&format!("ws://{}:3012", hostname))?;
 
     // Ok, this is pretty crazy, but I can explain.
     // We need to set up the websocket callbacks using wasm_bindgen for the initial connection,

@@ -1,3 +1,4 @@
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -61,8 +62,7 @@ impl Color {
         }
     }
     pub fn random() -> Color {
-        let idx = random_up_to(Color::all().len() as f64) as usize;
-        Color::all()[idx]
+        Color::all()[rand::thread_rng().gen_range(0, Color::all().len())]
     }
 }
 
@@ -361,7 +361,7 @@ impl Game {
 
     fn start(&mut self) -> Result<(), String> {
         // todo, pick this on the server
-        let impostor_index = random_up_to(self.players.len() as f64) as usize;
+        let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
         let impostor = &self.players[impostor_index];
         let impostors = vec![impostor.uuid];
         let start_data = StartGame { impostors };
@@ -529,45 +529,6 @@ impl Game {
         }
         Ok(())
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn randf64() -> f64 {
-    js_sys::Math::random()
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn randf64() -> f64 {
-    rand::random()
-}
-
-pub fn random_up_to(exclusive_max: f64) -> f64 {
-    (randf64() * exclusive_max).floor()
-}
-
-pub fn random_byte() -> u8 {
-    random_up_to(256.0) as u8
-}
-
-pub fn random_uuid() -> UUID {
-    [
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-        random_byte(),
-    ]
 }
 
 #[cfg(test)]

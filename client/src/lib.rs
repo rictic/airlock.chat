@@ -1,4 +1,5 @@
 mod utils;
+use rand::Rng;
 use rust_us_core::*;
 use std::error::Error;
 use std::f64;
@@ -313,8 +314,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let ws = WebSocket::new("ws://localhost:3012")?;
 
-    let my_uuid: UUID = random_uuid();
-    let starting_position_seed = randf64();
+    let my_uuid: UUID = rand::random();
+    let starting_position_seed: f64 = rand::random();
     let local_player = Player {
         uuid: my_uuid,
         color: Color::random(),
@@ -328,8 +329,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
         tasks: (0..6)
             .map(|_| Task {
                 position: Position {
-                    x: random_up_to(width).max(30.0).min(width - 30.0),
-                    y: random_up_to(height).max(30.0).min(height - 30.0),
+                    x: rand::thread_rng().gen_range(30.0, width - 30.0),
+                    y: rand::thread_rng().gen_range(30.0, height - 30.0),
                 },
                 finished: false,
             })
@@ -387,7 +388,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             environment
                 .game
                 .disconnected()
-                .expect("Could not handle disconnection in game");
+                .expect("Game failed to handle disconnection");
         }) as Box<dyn FnMut(ErrorEvent)>);
         ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
         onclose_callback.forget();
@@ -402,7 +403,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             environment
                 .game
                 .connected()
-                .expect("Could not handle connected in game");
+                .expect("Could not handle disconnection in game");
         }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();

@@ -1,6 +1,7 @@
 use core::fmt::Debug;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::Display;
@@ -253,7 +254,7 @@ pub struct Game {
     pub speed: f64,
     pub kill_distance: f64,
     pub task_distance: f64,
-    pub players: Vec<Player>,
+    pub players: BTreeMap<UUID, Player>,
     pub bodies: Vec<DeadBody>,
 }
 
@@ -280,8 +281,10 @@ impl GameAsPlayer {
             speed: Speed { dx: 0.0, dy: 0.0 },
         };
 
+        let mut players = BTreeMap::new();
+        players.insert(local_player.uuid, local_player);
         GameAsPlayer {
-            game: Game::new(vec![local_player]),
+            game: Game::new(players),
             inputs: InputState {
                 up: false,
                 down: false,
@@ -376,7 +379,7 @@ impl GameAsPlayer {
         let mut killed_player: Option<DeadBody> = None;
         let mut closest_distance = self.game.kill_distance;
 
-        for player in self.game.players.iter_mut() {
+        for (_, player) in self.game.players.iter_mut() {
             if player.impostor || player.uuid == self.my_uuid || player.dead {
                 continue;
             }
@@ -461,42 +464,40 @@ impl GameAsPlayer {
                 self.game.bodies = bodies;
                 // handle disconnections
                 let server_uuids: BTreeSet<_> = players.iter().map(|p| p.uuid).collect();
-                self.game.players.retain(|p| server_uuids.contains(&p.uuid));
+                let local_uuids: BTreeSet<_> = self.game.players.iter().map(|(u, _)| *u).collect();
+                for uuid in local_uuids.difference(&server_uuids) {
+                    self.game.players.remove(uuid);
+                }
+
                 for player in players {
-                    let mut handled = false;
-                    // This is inefficient and awkward. game.players should be a map keyed by uuid anyways.
-                    for local_player in self.game.players.iter_mut() {
-                        if local_player.uuid != player.uuid {
-                            continue;
+                    match self.game.players.get_mut(&player.uuid) {
+                        None => {
+                            self.game.players.insert(player.uuid, player);
                         }
-                        handled = true;
-                        let Player {
-                            uuid: _uuid,
-                            color,
-                            dead,
-                            impostor,
-                            tasks,
-                            position,
-                            speed,
-                        } = player.clone();
-                        local_player.color = color;
-                        local_player.dead = dead;
-                        local_player.impostor = impostor;
-                        local_player.tasks = tasks;
-                        // Always trust our local speed over the server
-                        if player.uuid != self.my_uuid {
-                            local_player.speed = speed;
+                        Some(local_player) => {
+                            let Player {
+                                uuid: _uuid,
+                                color,
+                                dead,
+                                impostor,
+                                tasks,
+                                position,
+                                speed,
+                            } = player;
+                            local_player.color = color;
+                            local_player.dead = dead;
+                            local_player.impostor = impostor;
+                            local_player.tasks = tasks;
+                            // Always trust our local speed over the server
+                            if player.uuid != self.my_uuid {
+                                local_player.speed = speed;
+                            }
+                            // Avoid jitter by ignoring position updates (and instead use local reconning
+                            // based on speeds) unless the distance is greater than some small amount.
+                            if position.distance(local_player.position) > 30.0 {
+                                local_player.position = position;
+                            }
                         }
-                        // Avoid jitter by ignoring position updates (and instead use local reconning
-                        // based on speeds) unless the distance is greater than some small amount.
-                        if position.distance(local_player.position) > 30.0 {
-                            local_player.position = position;
-                        }
-                        break;
-                    }
-                    // Handle joins.
-                    if !handled {
-                        self.game.players.push(player);
                     }
                 }
             }
@@ -511,7 +512,7 @@ impl GameAsPlayer {
 }
 
 impl Game {
-    pub fn new(players: Vec<Player>) -> Game {
+    pub fn new(players: BTreeMap<UUID, Player>) -> Game {
         Game {
             status: GameStatus::Connecting,
             speed: 2.0,
@@ -523,11 +524,11 @@ impl Game {
     }
 
     fn get_player(&self, uuid: UUID) -> Option<&Player> {
-        self.players.iter().find(|p| p.uuid == uuid)
+        self.players.get(&uuid)
     }
 
     fn get_player_mut(&mut self, uuid: UUID) -> Option<&mut Player> {
-        self.players.iter_mut().find(|p| p.uuid == uuid)
+        self.players.get_mut(&uuid)
     }
 
     fn simulate_internal(&mut self, elapsed: f64) -> Result<(), &'static str> {
@@ -538,7 +539,7 @@ impl Game {
         // vary between 30fps and 144fps even if our performance is perfect!
         let time_steps_passed = elapsed / 16.0;
 
-        for player in self.players.iter_mut() {
+        for (_, player) in self.players.iter_mut() {
             let Speed { dx, dy } = player.speed;
             player.position.x += dx * time_steps_passed;
             player.position.y += dy * time_steps_passed;
@@ -568,14 +569,9 @@ impl Game {
             return Err(format!("Internal error: got a message to start a game when not in the lobby!? Game status: {:?}", self.status));
         }
         let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
-        let impostor = &self.players[impostor_index];
-        let impostors = vec![impostor.uuid];
-        self.status = GameStatus::Playing;
-        for player in self.players.iter_mut() {
-            for impostor_uuid in impostors.iter() {
-                if player.uuid == *impostor_uuid {
-                    player.impostor = true;
-                }
+        for (i, (_, player)) in self.players.iter_mut().enumerate() {
+            if i == impostor_index {
+                player.impostor = true;
             }
             player.tasks = (0..6)
                 .map(|_| Task {
@@ -584,11 +580,12 @@ impl Game {
                 })
                 .collect();
         }
+
         Ok(())
     }
 
     fn note_death(&mut self, body: DeadBody) -> Result<(), String> {
-        for player in self.players.iter_mut() {
+        for (_, player) in self.players.iter_mut() {
             if player.color == body.color {
                 player.dead = true;
             }
@@ -603,7 +600,7 @@ impl Game {
     fn impostors_outnumber_players(&self) -> bool {
         let mut impostor_count = 0;
         let mut crew_count = 0;
-        for player in self.players.iter() {
+        for (_, player) in self.players.iter() {
             if player.dead {
                 continue;
             }
@@ -621,18 +618,16 @@ impl Game {
         player_uuid: UUID,
         finished: FinishedTask,
     ) -> Result<(), String> {
-        for player in self.players.iter_mut() {
-            if player.uuid == player_uuid {
-                if let Some(task) = player.tasks.get_mut(finished.index) {
-                    task.finished = true;
-                }
+        if let Some(player) = self.players.get_mut(&player_uuid) {
+            if let Some(task) = player.tasks.get_mut(finished.index) {
+                task.finished = true;
             }
         }
         let all_crew_tasks_finished = self
             .players
             .iter()
-            .filter(|p| !p.impostor)
-            .all(|p| p.tasks.iter().all(|t| t.finished));
+            .filter(|(_, p)| !p.impostor)
+            .all(|(_, p)| p.tasks.iter().all(|t| t.finished));
         if all_crew_tasks_finished {
             self.win(Team::Crew)?;
         }
@@ -660,7 +655,7 @@ pub trait Broadcaster: Send {
 impl GameServer {
     pub fn new(broadcaster: Box<dyn Broadcaster>) -> GameServer {
         GameServer {
-            game: Game::new(vec![]),
+            game: Game::new(BTreeMap::new()),
             broadcaster,
         }
     }
@@ -670,7 +665,7 @@ impl GameServer {
     }
 
     pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
-        self.game.players.retain(|p| p.uuid != disconnected_player);
+        self.game.players.remove(&disconnected_player);
         self.broadcast_snapshot()?;
         if self.game.players.is_empty() {
             self.game.status = GameStatus::Disconnected;
@@ -705,25 +700,21 @@ impl GameServer {
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::Move(moved) => {
-                for player in self.game.players.iter_mut() {
-                    if player.uuid == sender {
-                        player.speed = moved.speed;
-                        player.position = moved.position;
-                    }
+                if let Some(player) = self.game.players.get_mut(&sender) {
+                    player.speed = moved.speed;
+                    player.position = moved.position;
                 }
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::Join(mut player) => {
                 if self.game.status == GameStatus::Lobby {
-                    for p in self.game.players.iter() {
-                        if p.uuid == player.uuid {
-                            return Ok(()); // we know about this player already
-                        }
+                    if self.game.players.get(&player.uuid).is_some() {
+                        return Ok(()); // we know about this player already
                     }
                     // ok, it's a new player, and we have room for them. if their color is
                     // already taken, give them a new one.
                     let taken_colors: BTreeSet<Color> =
-                        self.game.players.iter().map(|p| p.color).collect();
+                        self.game.players.iter().map(|(_, p)| p.color).collect();
                     let add_player;
                     if taken_colors.contains(&player.color) {
                         match Color::all().iter().find(|c| !taken_colors.contains(c)) {
@@ -741,7 +732,7 @@ impl GameServer {
                     }
                     if add_player {
                         // We've added the new player (possibly with a new color)
-                        self.game.players.push(player);
+                        self.game.players.insert(player.uuid, player);
                     }
                 }
 
@@ -757,7 +748,7 @@ impl GameServer {
             .broadcast(&ServerToClientMessage::Snapshot(Snapshot {
                 status: self.game.status,
                 bodies: self.game.bodies.clone(),
-                players: self.game.players.clone(),
+                players: self.game.players.iter().map(|(_, p)| p.clone()).collect(),
             }))?;
         Ok(())
     }
@@ -978,11 +969,11 @@ mod tests {
         let game = env.expect_everyone_agrees_on_game_state(3)?;
 
         // P2 disconnects
-        assert!(game.players.iter().any(|p| p.uuid == player2_id));
+        assert!(game.players.get(&player2_id).is_some());
         env.remove_player(player2_id)?;
         env.dispatch_messages()?;
         let game = env.expect_everyone_agrees_on_game_state(2)?;
-        assert!(!game.players.iter().any(|p| p.uuid == player2_id));
+        assert!(game.players.get(&player2_id).is_none());
 
         Ok(())
     }
@@ -1042,7 +1033,7 @@ mod tests {
             .game
             .players
             .iter()
-            .map(|p| (p.uuid, p.position))
+            .map(|(u, p)| (*u, p.position))
             .collect();
 
         // P1 moved up and to the left

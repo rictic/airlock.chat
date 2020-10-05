@@ -9,5 +9,7 @@ fi
 
 echo "Building client..."
 (cd client && wasm-pack build && cd ../www && npm run build)
-echo "Client built, building and starting server..."
-(cd server && cargo run --bin prod)
+echo "Client built, building the server..."
+(cd server && cargo build)
+
+echo "Actually starting the prod server is still manual because it binds to port 80..."

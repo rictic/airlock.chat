@@ -459,7 +459,46 @@ impl GameAsPlayer {
                 println!("{:?} received snapshot.", self.my_uuid);
                 self.game.status = status;
                 self.game.bodies = bodies;
-                self.game.players = players;
+                // handle disconnections
+                let server_uuids: BTreeSet<_> = players.iter().map(|p| p.uuid).collect();
+                self.game.players.retain(|p| server_uuids.contains(&p.uuid));
+                for player in players {
+                    let mut handled = false;
+                    // This is inefficient and awkward. game.players should be a map keyed by uuid anyways.
+                    for local_player in self.game.players.iter_mut() {
+                        if local_player.uuid != player.uuid {
+                            continue;
+                        }
+                        handled = true;
+                        let Player {
+                            uuid: _uuid,
+                            color,
+                            dead,
+                            impostor,
+                            tasks,
+                            position,
+                            speed,
+                        } = player.clone();
+                        local_player.color = color;
+                        local_player.dead = dead;
+                        local_player.impostor = impostor;
+                        local_player.tasks = tasks;
+                        // Always trust our local speed over the server
+                        if player.uuid != self.my_uuid {
+                            local_player.speed = speed;
+                        }
+                        // Avoid jitter by ignoring position updates (and instead use local reconning
+                        // based on speeds) unless the distance is greater than some small amount.
+                        if position.distance(local_player.position) > 30.0 {
+                            local_player.position = position;
+                        }
+                        break;
+                    }
+                    // Handle joins.
+                    if !handled {
+                        self.game.players.push(player);
+                    }
+                }
             }
         }
         Ok(())

@@ -756,6 +756,7 @@ dependencies = [
  "futures",
  "futures-channel",
  "futures-util",
+ "http",
  "hyper",
  "rust_us_core",
  "serde_json",

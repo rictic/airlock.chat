@@ -37,7 +37,7 @@ impl Debug for UUID {
 }
 
 impl UUID {
-    fn random() -> UUID {
+    pub fn random() -> UUID {
         UUID { v: rand::random() }
     }
 }

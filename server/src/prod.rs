@@ -15,7 +15,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let path = Arc::new(Path::new("../www/dist"));
+  let path = Arc::new(Path::new("./dist"));
   if !path.exists() {
     return Err(
       r"Web directory isn't built. Be sure to do (cd www && npm run build) first.
@@ -78,7 +78,7 @@ async fn serve_static_file(
   base_path: Arc<&'static Path>,
 ) -> Result<Response<Body>, Box<dyn Error + Send + Sync>> {
   println!("Incoming request to {}", req.uri());
-  let req_path = if req.uri().path() == "/" {
+  let mut req_path = if req.uri().path() == "/" {
     base_path.join("index.html")
   } else {
     base_path.join(&req.uri().path()[1..])
@@ -115,12 +115,51 @@ async fn serve_static_file(
       );
     }
   };
+  req_path.set_extension(format!(
+    "{}.gz",
+    req_path.extension().unwrap().to_str().unwrap()
+  ));
   builder = builder.header(http::header::CONTENT_TYPE, content_type);
+
+  match req.headers().get(http::header::ACCEPT_ENCODING) {
+    None => {
+      return Ok(
+        Response::builder()
+          .status(StatusCode::BAD_REQUEST)
+          .body("We only serve out gzipped responses, but you don't accept gzip.".into())
+          .unwrap(),
+      )
+    }
+    Some(encoding) => {
+      if let Ok(s) = encoding.to_str() {
+        if s.contains("gz") {
+        } else {
+          return Ok(
+            Response::builder()
+              .status(StatusCode::BAD_REQUEST)
+              .body("We only serve out gzipped responses, but you don't accept gzip.".into())
+              .unwrap(),
+          );
+        }
+      } else {
+        return Ok(
+          Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("We only serve out gzipped responses, but you don't accept gzip.".into())
+            .unwrap(),
+        );
+      }
+    }
+  }
 
   if let Ok(file) = File::open(req_path).await {
     let stream = FramedRead::new(file, BytesCodec::new());
     let body = Body::wrap_stream(stream);
-    return Ok(builder.body(body)?);
+    return Ok(
+      builder
+        .header(http::header::CONTENT_ENCODING, "gzip")
+        .body(body)?,
+    );
   }
 
   Ok(not_found())

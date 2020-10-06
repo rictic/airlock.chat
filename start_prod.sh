@@ -8,6 +8,8 @@ else
 fi
 
 echo "Building client..."
-(cd client && wasm-pack build && cd ../www && npm run build)
+(cd client && wasm-pack build --release && cd ../www && npm run build)
+cp -r www/dist server/dist
+gzip -9 server/dist/*
 echo "Client built, building and starting server..."
-(cd server && cargo run --bin prod)
+(cd server && cargo run --bin prod --release)

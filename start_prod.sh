@@ -12,4 +12,12 @@ echo "Building client..."
 cp -r www/dist server/dist
 gzip -9 server/dist/*
 echo "Client built, building and starting server..."
-(cd server && cargo run --bin prod --release)
+echo "Client built, building the server..."
+(cd server && cargo build --release)
+
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  echo "Running sudo setcap to allow prod server to bind to low ports"
+  sudo setcap CAP_NET_BIND_SERVICE=+eip server/target/release/prod
+fi
+
+(cd server && nohup target/release/prod) &

@@ -293,6 +293,7 @@ impl GameWrapper {
 
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
+    utils::set_panic_hook();
     let context = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let hostname = web_sys::window()

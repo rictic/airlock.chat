@@ -31,11 +31,9 @@ struct Canvas {
 }
 
 impl Canvas {
-    fn draw(&self, game: &GameAsPlayer) -> Option<String> {
-        match self.draw_internal(game) {
-            Ok(()) => None,
-            Err(e) => Some(format!("Error: {}", e)),
-        }
+    fn draw(&self, game: &GameAsPlayer) -> Result<(), JsValue> {
+        self.draw_internal(game)
+            .map_err(|e| JsValue::from(format!("Error: {}", e)))
     }
 
     fn draw_internal(&self, game: &GameAsPlayer) -> Result<(), Box<dyn Error>> {
@@ -259,35 +257,63 @@ impl GameWrapper {
             .map_err(JsValue::from)
     }
 
-    pub fn simulate(&mut self, elapsed: f64) -> Result<Option<String>, JsValue> {
+    pub fn simulate(&mut self, elapsed: f64) -> Result<bool, JsValue> {
         let mut environment = self
             .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
         if environment.game.game.status == GameStatus::Connecting {
-            return Ok(None);
-        }
-        if environment.game.game.status == GameStatus::Disconnected {
-            return Ok(Some("Disconnected from server".to_string()));
-        }
-        if let GameStatus::Won(team) = environment.game.game.status {
-            return Ok(Some(format!("{:?} win!", team)));
+            return Ok(false);
         }
         Ok(environment.game.game.simulate(elapsed))
     }
 
-    pub fn draw(&mut self) -> Result<Option<String>, JsValue> {
+    pub fn draw(&mut self) -> Result<(), JsValue> {
         let environment = self
             .environment
             .lock()
             .expect("Internal Error: could not get a lock on the game");
         if environment.game.game.status == GameStatus::Connecting {
-            return Ok(None);
+            return Ok(());
         }
-        if environment.game.game.status == GameStatus::Disconnected {
-            return Ok(Some("Disconnected from server".to_string()));
+        environment.canvas.draw(&environment.game)
+    }
+
+    pub fn get_status(&self) -> String {
+        let environment = self.environment.lock().unwrap();
+        let game = &environment.game;
+        let local_player = game.local_player();
+        match game.game.status {
+            GameStatus::Connecting => "Conecting to game...".to_string(),
+            GameStatus::Disconnected => "Disconnected from server.".to_string(),
+            GameStatus::Lobby => {
+                if let Some(local_player) = local_player {
+                    format!("In the lobby. You're {:?}. Press P to start the game once enough players have joined!", local_player.color)
+                } else {
+                    "In the lobby. The game is full so you're spectating.".to_string()
+                }
+            }
+            GameStatus::Won(team) => format!("{:?} win!", team),
+            GameStatus::Playing => {
+                if let Some(local_player) = local_player {
+                    if local_player.dead {
+                        if local_player.impostor {
+                            "You're dead as an impostor! Nothing to do right now but watch."
+                                .to_string()
+                        } else {
+                            "You're dead as a crewmate! Be sure to finish your tasks.".to_string()
+                        }
+                    } else if local_player.impostor {
+                        "You're an impostor! Kill players by getting near them and pressing Q."
+                            .to_string()
+                    } else {
+                        "You're a good crewmate! Go to your tasks and press E to solve them, but watch out for impostors trying to kill you!".to_string()
+                    }
+                } else {
+                    "The game has begun! You're spectating.".to_string()
+                }
+            }
         }
-        Ok(environment.canvas.draw(&environment.game))
     }
 }
 

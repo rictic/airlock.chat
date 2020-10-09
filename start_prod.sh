@@ -21,4 +21,6 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   sudo setcap CAP_NET_BIND_SERVICE=+eip server/target/release/prod
 fi
 
+# kill the previous server, if any
+kill `ps aux | grep -v grep | grep target/release/prod | tr -s ' ' | cut -d ' ' -f 2`
 (cd server && nohup target/release/prod) &

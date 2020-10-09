@@ -97,7 +97,7 @@ impl Server {
   }
 }
 
-async fn simulation_loop(game_server: Arc<Mutex<GameServer>>) {
+async fn simulation_loop(game_server: Arc<Mutex<GameServer>>, room: Room) {
   let mut prev = Instant::now();
   loop {
     delay_for(Duration::from_millis(16)).await;
@@ -105,9 +105,15 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>) {
     let elapsed = now - prev;
     prev = now;
     let mut game_server = game_server.lock().unwrap();
+    // The server wants to disconnect the players (e.g. timeout),
+    // so close all the connections.
     let finished = game_server.simulate(elapsed.as_millis() as f64);
     if finished {
       println!("Game finished, done simulating it on the server.");
+      let mut room = room.lock().unwrap();
+      for (_, player) in room.iter_mut() {
+        player.disconnect();
+      }
       break;
     }
   }
@@ -135,7 +141,7 @@ async fn handle_connection(
     let mut game_server_unlocked = game_server.lock().unwrap();
     if game_server_unlocked.game.status == GameStatus::Connecting {
       game_server_unlocked.game.status = GameStatus::Lobby;
-      tokio::spawn(simulation_loop(game_server.clone()));
+      tokio::spawn(simulation_loop(game_server.clone(), room.clone()));
     }
   }
 
@@ -219,6 +225,9 @@ async fn handle_connection(
   room.lock().unwrap().remove(&uuid);
 
   let mut game_server = game_server.lock().unwrap();
+  if game_server.game.status.finished() {
+    return; // The game is done, and the simulation loop will clean up, just return.
+  }
   match game_server.disconnected(uuid) {
     Ok(()) => (),
     Err(e) => println!("Error handling disconnection: {}", e),

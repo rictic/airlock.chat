@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::Display;
+use std::time::Instant;
 
 // This is not the proper way to handle dimensions...
 pub const WIDTH: f64 = 1024.0;
@@ -633,6 +634,7 @@ impl Game {
 // game server, and potentially a future peer to peer in-client server.
 pub struct GameServer {
     pub game: Game,
+    last_message_received_at: Instant,
     broadcaster: Box<dyn Broadcaster>,
 }
 
@@ -649,11 +651,17 @@ impl GameServer {
     pub fn new(broadcaster: Box<dyn Broadcaster>) -> GameServer {
         GameServer {
             game: Game::new(BTreeMap::new()),
+            last_message_received_at: Instant::now(),
             broadcaster,
         }
     }
 
     pub fn simulate(&mut self, elapsed: f64) -> bool {
+        let timeout_duration = std::time::Duration::from_secs(15 * /* minutes */60);
+        let timed_out = self.last_message_received_at.elapsed() > timeout_duration;
+        if self.game.status != GameStatus::Connecting && timed_out {
+            self.game.status = GameStatus::Disconnected;
+        }
         self.game.simulate(elapsed)
     }
 
@@ -671,6 +679,7 @@ impl GameServer {
         sender: UUID,
         message: ClientToServerMessage,
     ) -> Result<(), Box<dyn Error>> {
+        self.last_message_received_at = Instant::now();
         println!("Game server handling {:?}", message);
         match message {
             ClientToServerMessage::StartGame() => {

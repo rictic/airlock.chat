@@ -1,13 +1,15 @@
 import * as wasm from '../client/pkg/rust_us';
 
+const textOutput = document.createElement('div');
+textOutput.style.position = 'absolute';
+textOutput.style.marginLeft = '10px';
+document.body.appendChild(textOutput);
 const perf = document.createElement('div');
-document.body.appendChild(perf);
+textOutput.appendChild(perf);
 const output = document.createElement('div');
-document.body.appendChild(output);
+textOutput.appendChild(output);
 
 const canvas = document.createElement('canvas');
-canvas.width = 1024;
-canvas.height = 768;
 canvas.id = 'canvas';
 document.body.appendChild(canvas);
 
@@ -45,10 +47,9 @@ function drawOneFrame() {
   } else {
     totalTimes[perfIdx] = elapsed;
   }
-  let perfMessage = 'Speed stats';
-  perfMessage += ` - ${average(simTimes).toFixed(1)}ms sim`;
-  perfMessage += ` – ${average(drawTimes).toFixed(1)}ms draw`;
-  perfMessage += ` – ${(1000 / average(totalTimes)).toFixed(1)}fps`;
+  let perfMessage = `${(1000 / average(totalTimes)).toFixed(1)}fps [`;
+  perfMessage += `${average(simTimes).toFixed(1)}ms sim, `;
+  perfMessage += ` ${average(drawTimes).toFixed(1)}ms draw]`;
   output.innerText = message;
   perf.innerText = perfMessage;
   if (!finished) {

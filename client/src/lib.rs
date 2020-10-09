@@ -29,6 +29,7 @@ struct Canvas {
     height: f64,
     camera: Camera,
     context: web_sys::CanvasRenderingContext2d,
+    canvas_element: web_sys::HtmlCanvasElement,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -46,10 +47,25 @@ impl Camera {
         (x, y)
     }
 }
-
 impl Canvas {
+    fn set_dimensions(&mut self) -> Result<(), JsValue> {
+        let window = web_sys::window().ok_or("Could not get window")?;
+        let ratio = window.device_pixel_ratio();
+        let width: f64 = window.inner_width()?.as_f64().unwrap();
+        let height = window.inner_height()?.as_f64().unwrap();
+        self.canvas_element
+            .set_width((width * ratio).floor() as u32);
+        self.canvas_element
+            .set_height((height * ratio).floor() as u32);
+        self.context.scale(ratio, ratio)?;
+        self.width = width;
+        self.height = height;
+        Ok(())
+    }
+
     // Draws the current game state.
     fn draw(&mut self, game: Arc<Mutex<GameAsPlayer>>) -> Result<(), Box<dyn Error>> {
+        self.set_dimensions().map_err(|e| format!("{:?}", e))?;
         let game = game.lock().unwrap();
         let context = &self.context;
         // Frame the canvas.
@@ -58,7 +74,6 @@ impl Canvas {
         context.rect(0.0, 0.0, self.width, self.height);
         context.set_fill_style(&JsValue::from_str("#f3f3f3"));
         context.fill();
-        context.stroke();
 
         // Move the
         self.camera = match game.local_player() {
@@ -86,6 +101,8 @@ impl Canvas {
                 }
             }
         };
+
+        self.context.set_line_width(self.camera.zoom);
 
         // Draw the conference table
         context.set_stroke_style(&JsValue::from_str("#000000"));
@@ -252,7 +269,13 @@ impl GameTx for WebSocketTx {
     }
 }
 
-fn get_canvas_info() -> Result<web_sys::CanvasRenderingContext2d, Box<dyn Error>> {
+fn get_canvas_info() -> Result<
+    (
+        web_sys::HtmlCanvasElement,
+        web_sys::CanvasRenderingContext2d,
+    ),
+    Box<dyn Error>,
+> {
     let document = web_sys::window()
         .ok_or("Could not get window")?
         .document()
@@ -271,7 +294,7 @@ fn get_canvas_info() -> Result<web_sys::CanvasRenderingContext2d, Box<dyn Error>
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .map_err(|_| "Returned value was not a CanvasRenderingContext2d")?;
 
-    Ok(context)
+    Ok((canvas, context))
 }
 
 #[wasm_bindgen]
@@ -371,7 +394,7 @@ impl GameWrapper {
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
     utils::set_panic_hook();
-    let context = get_canvas_info()
+    let (canvas, context) = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let hostname = web_sys::window()
         .ok_or("no window")?
@@ -454,6 +477,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
     let wrapper = GameWrapper {
         canvas: Canvas {
             context,
+            canvas_element: canvas,
             camera: Camera {
                 top: 0.0,
                 left: 0.0,

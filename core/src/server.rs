@@ -33,11 +33,8 @@ impl GameServer {
   }
 
   pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
-    self.state.players.remove(&disconnected_player);
+    self.state.handle_disconnection(disconnected_player);
     self.broadcast_snapshot()?;
-    if self.state.players.is_empty() {
-      self.state.status = GameStatus::Disconnected;
-    }
     Ok(())
   }
 
@@ -117,11 +114,13 @@ impl GameServer {
         self.broadcast_snapshot()?;
       }
       ClientToServerMessage::Vote { target } => {
-        if !eligable_to_vote(self.state.players.get(&sender)) {
+        if !(eligable_to_vote(self.state.players.get(&sender)) && self.eligable_target(target)) {
           return Ok(());
         }
         // If it's night, and the sender hasn't voted yet, record their vote.
-        if let GameStatus::Playing(PlayState::Night { votes }) = &mut self.state.status {
+        if let GameStatus::Playing(PlayState::Night(NightState { votes, .. })) =
+          &mut self.state.status
+        {
           if let Entry::Vacant(o) = votes.entry(sender) {
             o.insert(target);
           }
@@ -141,17 +140,25 @@ impl GameServer {
       }))?;
     Ok(())
   }
+
+  fn eligable_target(&self, target: VoteTarget) -> bool {
+    match target {
+      VoteTarget::Skip => {
+        true // skip is always valid
+      }
+      VoteTarget::Player { uuid } => match self.state.players.get(&uuid) {
+        None => false,
+        Some(p) => !p.dead,
+      },
+    }
+  }
 }
 
 fn eligable_to_vote(voter: Option<&Player>) -> bool {
-  let voter = match voter {
-    Some(player) => player,
-    None => return false,
-  };
-  if voter.dead {
-    return false;
+  match voter {
+    Some(player) => player.eligable_to_vote(),
+    None => false,
   }
-  true
 }
 
 pub trait Broadcaster: Send {

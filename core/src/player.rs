@@ -186,7 +186,6 @@ impl GameAsPlayer {
   }
 
   pub fn connected(&mut self) -> Result<(), String> {
-    self.game.status = GameStatus::Lobby;
     let local_player = self
       .local_player()
       .expect("Internal error: could not get local player during init");

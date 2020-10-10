@@ -33,7 +33,7 @@ impl TestEnvironment {
   // fake network, but doesn't send any messages.
   fn create_player(&mut self) -> UUID {
     let queue: Arc<Mutex<Vec<ClientToServerMessage>>> = Arc::default();
-    let player = GameAsPlayer::new(Box::new(TestPlayerTx {
+    let player = GameAsPlayer::new("test player".to_string(), Box::new(TestPlayerTx {
       messages: queue.clone(),
     }));
     let uuid = player.my_uuid;

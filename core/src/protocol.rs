@@ -7,7 +7,7 @@ pub enum ClientToServerMessage {
   Move(MoveMessage),
   Killed(DeadBody),
   FinishedTask(FinishedTask),
-  Join(Player),
+  Join(Join),
   StartGame(),
 }
 
@@ -36,6 +36,13 @@ impl ServerToClientMessage {
       ServerToClientMessage::Snapshot(_) => "Snapshot",
     }
   }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Join {
+  pub uuid: UUID,
+  pub preferred_color: Color,
+  pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]

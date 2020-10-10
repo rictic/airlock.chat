@@ -31,25 +31,10 @@ pub trait GameTx {
 
 // A game from the perspective of a particular player.
 impl GameAsPlayer {
-  pub fn new(socket: Box<dyn GameTx>) -> GameAsPlayer {
+  pub fn new(name: String, socket: Box<dyn GameTx>) -> GameAsPlayer {
     let my_uuid = UUID::random();
-    let starting_position_seed: f64 = rand::random();
-    let local_player = Player {
-      uuid: my_uuid,
-      color: Color::random(),
-      dead: false,
-      position: Position {
-        x: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
-        y: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
-      },
-      impostor: false,
-      // 6 random tasks
-      tasks: vec![],
-      speed: Speed { dx: 0.0, dy: 0.0 },
-    };
-
     let mut players = BTreeMap::new();
-    players.insert(local_player.uuid, local_player);
+    players.insert(my_uuid, Player::new(my_uuid, name, Color::random()));
     GameAsPlayer {
       game: Game::new(players),
       inputs: InputState {
@@ -202,12 +187,14 @@ impl GameAsPlayer {
 
   pub fn connected(&mut self) -> Result<(), String> {
     self.game.status = GameStatus::Lobby;
-    self.socket.send(&ClientToServerMessage::Join(
-      self
-        .local_player()
-        .expect("Internal error: could not get local player during init")
-        .clone(),
-    ))
+    let local_player = self
+      .local_player()
+      .expect("Internal error: could not get local player during init");
+    self.socket.send(&ClientToServerMessage::Join(Join {
+      uuid: self.my_uuid,
+      name: local_player.name.clone(),
+      preferred_color: local_player.color,
+    }))
   }
 
   pub fn disconnected(&mut self) -> Result<(), String> {
@@ -245,6 +232,7 @@ impl GameAsPlayer {
             }
             Some(local_player) => {
               let Player {
+                name,
                 uuid: _uuid,
                 color,
                 dead,
@@ -253,6 +241,7 @@ impl GameAsPlayer {
                 position,
                 speed,
               } = player;
+              local_player.name = name;
               local_player.color = color;
               local_player.dead = dead;
               local_player.impostor = impostor;

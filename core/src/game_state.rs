@@ -241,6 +241,7 @@ pub struct Task {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Player {
+  pub name: String,
   pub uuid: UUID,
   pub color: Color,
   pub position: Position,
@@ -248,6 +249,26 @@ pub struct Player {
   pub impostor: bool,
   pub tasks: Vec<Task>,
   pub speed: Speed,
+}
+
+impl Player {
+  pub fn new(uuid: UUID, name: String, color: Color) -> Player {
+    let starting_position_seed: f64 = rand::random();
+    Player {
+      name,
+      uuid,
+      color,
+      dead: false,
+      position: Position {
+        x: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
+        y: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
+      },
+      impostor: false,
+      // 6 random tasks
+      tasks: vec![],
+      speed: Speed { dx: 0.0, dy: 0.0 },
+    }
+  }
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq)]

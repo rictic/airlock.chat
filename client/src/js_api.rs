@@ -113,7 +113,7 @@ impl GameWrapper {
 }
 
 #[wasm_bindgen]
-pub fn make_game() -> Result<GameWrapper, JsValue> {
+pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
   let hostname = web_sys::window()
     .ok_or("no window")?
@@ -135,9 +135,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
 
   let wrapper = GameWrapper {
     canvas: Canvas::find_in_document()?,
-    game: Arc::new(Mutex::new(GameAsPlayer::new(Box::new(WebSocketTx::new(
-      ws,
-    ))))),
+    game: Arc::new(Mutex::new(GameAsPlayer::new(
+      name,
+      Box::new(WebSocketTx::new(ws)),
+    ))),
   };
   {
     let mut wrapped = wrapper_wrapper.lock().unwrap();

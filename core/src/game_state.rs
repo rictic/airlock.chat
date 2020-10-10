@@ -66,7 +66,7 @@ impl GameState {
         self.status
       ));
     }
-    self.status = GameStatus::Playing;
+    self.status = GameStatus::Playing(PlayState::Day);
     let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
     for (i, (_, player)) in self.players.iter_mut().enumerate() {
       if i == impostor_index {
@@ -283,21 +283,33 @@ pub struct DeadBody {
   pub position: Position,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum GameStatus {
   Connecting,
   Lobby,
-  Playing,
+  Playing(PlayState),
   Won(Team),
   Disconnected,
 }
 
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub enum PlayState {
+  Day,
+  Night { votes: BTreeMap<UUID, VoteTarget> },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq)]
+pub enum VoteTarget {
+  Player { uuid: UUID },
+  Skip,
+}
+
 impl GameStatus {
-  pub fn finished(self) -> bool {
+  pub fn finished(&self) -> bool {
     match self {
       GameStatus::Connecting => false,
       GameStatus::Lobby => false,
-      GameStatus::Playing => false,
+      GameStatus::Playing(_) => false,
       GameStatus::Won(_) => true,
       GameStatus::Disconnected => true,
     }

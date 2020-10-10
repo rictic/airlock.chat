@@ -1,4 +1,5 @@
 use crate::*;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeSet;
 use std::error::Error;
 
@@ -115,6 +116,17 @@ impl GameServer {
         // Send out a snapshot to catch the new client up, whether or not they're playing.
         self.broadcast_snapshot()?;
       }
+      ClientToServerMessage::Vote { target } => {
+        if !eligable_to_vote(self.state.players.get(&sender)) {
+          return Ok(());
+        }
+        // If it's night, and the sender hasn't voted yet, record their vote.
+        if let GameStatus::Playing(PlayState::Night { votes }) = &mut self.state.status {
+          if let Entry::Vacant(o) = votes.entry(sender) {
+            o.insert(target);
+          }
+        }
+      }
     };
     Ok(())
   }
@@ -123,12 +135,23 @@ impl GameServer {
     self
       .broadcaster
       .broadcast(&ServerToClientMessage::Snapshot(Snapshot {
-        status: self.state.status,
+        status: self.state.status.clone(),
         bodies: self.state.bodies.clone(),
         players: self.state.players.iter().map(|(_, p)| p.clone()).collect(),
       }))?;
     Ok(())
   }
+}
+
+fn eligable_to_vote(voter: Option<&Player>) -> bool {
+  let voter = match voter {
+    Some(player) => player,
+    None => return false,
+  };
+  if voter.dead {
+    return false;
+  }
+  true
 }
 
 pub trait Broadcaster: Send {

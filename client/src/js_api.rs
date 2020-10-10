@@ -91,7 +91,7 @@ impl GameWrapper {
         }
       }
       GameStatus::Won(team) => format!("{:?} win!", team),
-      GameStatus::Playing => {
+      GameStatus::Playing(_) => {
         if let Some(local_player) = local_player {
           if local_player.dead {
             if local_player.impostor {

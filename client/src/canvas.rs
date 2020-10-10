@@ -115,6 +115,9 @@ impl Canvas {
     context.rect(0.0, 0.0, self.width, self.height);
     context.set_fill_style(&JsValue::from_str("#f3f3f3"));
     context.fill();
+    if game.game.status == GameStatus::Disconnected {
+      return Ok(());
+    }
 
     // Move the
     self.camera = match game.local_player() {

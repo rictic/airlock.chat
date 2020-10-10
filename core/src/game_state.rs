@@ -16,14 +16,20 @@ pub struct Game {
   pub bodies: Vec<DeadBody>,
 }
 
+impl Default for game_state::Game {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl Game {
-  pub fn new(players: BTreeMap<UUID, Player>) -> Game {
+  pub fn new() -> Game {
     Game {
       status: GameStatus::Connecting,
       speed: 2.0,
       task_distance: 32.0,
       kill_distance: 64.0,
-      players,
+      players: BTreeMap::new(),
       bodies: Vec::new(),
     }
   }

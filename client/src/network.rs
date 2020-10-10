@@ -2,6 +2,7 @@ use crate::*;
 use rust_us_core::ClientToServerMessage;
 use rust_us_core::GameAsPlayer;
 use rust_us_core::GameTx;
+use rust_us_core::Join;
 use rust_us_core::ServerToClientMessage;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -37,6 +38,7 @@ impl GameTx for WebSocketTx {
 pub fn wire_up_websocket(
   wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>>,
   ws: &WebSocket,
+  join: Join,
 ) {
   let wrapper_wrapper_clone = wrapper_wrapper.clone();
   let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
@@ -88,12 +90,16 @@ pub fn wire_up_websocket(
   onclose_callback.forget();
 
   // TODO: wait on socket to connect before returning.
+
   let onopen_callback = Closure::wrap(Box::new(move |_| {
     console_log!("socket opened");
     let option_wrapped = &wrapper_wrapper.lock().unwrap();
     let wrapper = &option_wrapped.as_ref().unwrap();
     let mut game = wrapper.lock().unwrap();
-    game.connected().expect("Could not handle game.connected()");
+    let join = join.clone();
+    game
+      .connected(join)
+      .expect("Could not handle game.connected()");
   }) as Box<dyn FnMut(JsValue)>);
   ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
   onopen_callback.forget();

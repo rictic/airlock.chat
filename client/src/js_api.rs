@@ -131,12 +131,18 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   // So here we are.
   let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>> = Arc::new(Mutex::new(None));
 
-  wire_up_websocket(wrapper_wrapper.clone(), &ws);
+  let my_uuid = UUID::random();
+  let join = Join {
+    uuid: my_uuid,
+    name,
+    preferred_color: Color::random(),
+  };
+  wire_up_websocket(wrapper_wrapper.clone(), &ws, join);
 
   let wrapper = GameWrapper {
     canvas: Canvas::find_in_document()?,
     game: Arc::new(Mutex::new(GameAsPlayer::new(
-      name,
+      my_uuid,
       Box::new(WebSocketTx::new(ws)),
     ))),
   };

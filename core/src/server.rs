@@ -1,5 +1,4 @@
 use crate::*;
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
 
@@ -17,7 +16,7 @@ pub struct GameServer {
 impl GameServer {
   pub fn new(broadcaster: Box<dyn Broadcaster>) -> GameServer {
     GameServer {
-      game: Game::new(BTreeMap::new()),
+      game: Game::new(),
       last_message_received_at: Instant::now(),
       broadcaster,
     }

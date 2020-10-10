@@ -1,6 +1,5 @@
 use crate::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -31,12 +30,9 @@ pub trait GameTx {
 
 // A game from the perspective of a particular player.
 impl GameAsPlayer {
-  pub fn new(name: String, socket: Box<dyn GameTx>) -> GameAsPlayer {
-    let my_uuid = UUID::random();
-    let mut players = BTreeMap::new();
-    players.insert(my_uuid, Player::new(my_uuid, name, Color::random()));
+  pub fn new(uuid: UUID, socket: Box<dyn GameTx>) -> GameAsPlayer {
     GameAsPlayer {
-      game: Game::new(players),
+      game: Game::new(),
       inputs: InputState {
         up: false,
         down: false,
@@ -47,7 +43,7 @@ impl GameAsPlayer {
         report: false,
         play: false,
       },
-      my_uuid,
+      my_uuid: uuid,
       socket,
     }
   }
@@ -185,15 +181,8 @@ impl GameAsPlayer {
     Ok(())
   }
 
-  pub fn connected(&mut self) -> Result<(), String> {
-    let local_player = self
-      .local_player()
-      .expect("Internal error: could not get local player during init");
-    self.socket.send(&ClientToServerMessage::Join(Join {
-      uuid: self.my_uuid,
-      name: local_player.name.clone(),
-      preferred_color: local_player.color,
-    }))
+  pub fn connected(&mut self, join: Join) -> Result<(), String> {
+    self.socket.send(&ClientToServerMessage::Join(join))
   }
 
   pub fn disconnected(&mut self) -> Result<(), String> {

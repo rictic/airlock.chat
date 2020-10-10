@@ -111,21 +111,21 @@ impl GameAsPlayer {
     let mut dx = 0.0;
     let mut dy = 0.0;
     if self.inputs.up && !self.inputs.down {
-      dy = -self.state.speed
+      dy = -self.state.settings.speed
     } else if self.inputs.down {
-      dy = self.state.speed
+      dy = self.state.settings.speed
     }
     if self.inputs.left && !self.inputs.right {
-      dx = -self.state.speed
+      dx = -self.state.settings.speed
     } else if self.inputs.right {
-      dx = self.state.speed
+      dx = self.state.settings.speed
     }
     Speed { dx, dy }
   }
 
   fn kill_player_near(&mut self, position: Position) -> Result<(), String> {
     let mut killed_player: Option<DeadBody> = None;
-    let mut closest_distance = self.state.kill_distance;
+    let mut closest_distance = self.state.settings.kill_distance;
 
     for (_, player) in self.state.players.iter_mut() {
       if player.impostor || player.uuid == self.my_uuid || player.dead {
@@ -155,7 +155,7 @@ impl GameAsPlayer {
   }
 
   fn activate_near(&mut self, position: Position) -> Result<(), String> {
-    let mut closest_distance = self.state.task_distance;
+    let mut closest_distance = self.state.settings.task_distance;
     let local_player = match self.local_player_mut() {
       Some(player) => player,
       None => return Ok(()),

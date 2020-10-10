@@ -9,11 +9,25 @@ use std::fmt::Display;
 #[derive(PartialEq, Clone, Debug)]
 pub struct GameState {
   pub status: GameStatus,
+  pub settings: Settings,
+  pub players: BTreeMap<UUID, Player>,
+  pub bodies: Vec<DeadBody>,
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct Settings {
   pub speed: f64,
   pub kill_distance: f64,
   pub task_distance: f64,
-  pub players: BTreeMap<UUID, Player>,
-  pub bodies: Vec<DeadBody>,
+}
+impl Default for Settings {
+  fn default() -> Self {
+    Settings {
+      speed: 2.0,
+      task_distance: 32.0,
+      kill_distance: 64.0,
+    }
+  }
 }
 
 impl Default for GameState {
@@ -26,9 +40,7 @@ impl GameState {
   pub fn new() -> Self {
     GameState {
       status: GameStatus::Connecting,
-      speed: 2.0,
-      task_distance: 32.0,
-      kill_distance: 64.0,
+      settings: Settings::default(),
       players: BTreeMap::new(),
       bodies: Vec::new(),
     }

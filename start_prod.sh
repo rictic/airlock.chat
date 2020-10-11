@@ -12,7 +12,6 @@ echo "Building client..."
 rm -rf server/dist/
 cp -r www/dist server/dist
 gzip -9 server/dist/*
-echo "Client built, building and starting server..."
 echo "Client built, building the server..."
 (cd server && cargo build --release)
 

@@ -21,7 +21,7 @@ pub struct InputState {
 pub struct GameAsPlayer {
   pub my_uuid: UUID,
   inputs: InputState,
-  pub game: Game,
+  pub state: GameState,
   socket: Box<dyn GameTx>,
 }
 
@@ -51,7 +51,7 @@ impl GameAsPlayer {
     let mut players = BTreeMap::new();
     players.insert(local_player.uuid, local_player);
     GameAsPlayer {
-      game: Game::new(players),
+      state: GameState::new(players),
       inputs: InputState {
         up: false,
         down: false,
@@ -69,11 +69,11 @@ impl GameAsPlayer {
 
   // Is there a way to avoid duplicating the logic between local_player and local_player_mut?
   pub fn local_player(&self) -> Option<&Player> {
-    self.game.players.get(&self.my_uuid)
+    self.state.players.get(&self.my_uuid)
   }
 
   fn local_player_mut(&mut self) -> Option<&mut Player> {
-    self.game.players.get_mut(&self.my_uuid)
+    self.state.players.get_mut(&self.my_uuid)
   }
 
   // Take the given inputs from the local player
@@ -91,7 +91,7 @@ impl GameAsPlayer {
     let position = player.position;
     let activating = !current_input.activate && new_input.activate;
     let starting_play =
-      self.game.status == GameStatus::Lobby && !current_input.play && new_input.play;
+      self.state.status == GameStatus::Lobby && !current_input.play && new_input.play;
     self.inputs = new_input;
     // ok, we're done touching player at this point. we redeclare it
     // below so we can use it again, next time mutably.
@@ -130,23 +130,23 @@ impl GameAsPlayer {
     let mut dx = 0.0;
     let mut dy = 0.0;
     if self.inputs.up && !self.inputs.down {
-      dy = -self.game.speed
+      dy = -self.state.speed
     } else if self.inputs.down {
-      dy = self.game.speed
+      dy = self.state.speed
     }
     if self.inputs.left && !self.inputs.right {
-      dx = -self.game.speed
+      dx = -self.state.speed
     } else if self.inputs.right {
-      dx = self.game.speed
+      dx = self.state.speed
     }
     Speed { dx, dy }
   }
 
   fn kill_player_near(&mut self, position: Position) -> Result<(), String> {
     let mut killed_player: Option<DeadBody> = None;
-    let mut closest_distance = self.game.kill_distance;
+    let mut closest_distance = self.state.kill_distance;
 
-    for (_, player) in self.game.players.iter_mut() {
+    for (_, player) in self.state.players.iter_mut() {
       if player.impostor || player.uuid == self.my_uuid || player.dead {
         continue;
       }
@@ -162,7 +162,7 @@ impl GameAsPlayer {
     }
 
     if let Some(body) = killed_player {
-      self.game.note_death(body)?;
+      self.state.note_death(body)?;
       self.socket.send(&ClientToServerMessage::Killed(body))?;
       // Move the killer on top of the new body.
       if let Some(player) = self.local_player_mut() {
@@ -174,7 +174,7 @@ impl GameAsPlayer {
   }
 
   fn activate_near(&mut self, position: Position) -> Result<(), String> {
-    let mut closest_distance = self.game.task_distance;
+    let mut closest_distance = self.state.task_distance;
     let local_player = match self.local_player_mut() {
       Some(player) => player,
       None => return Ok(()),
@@ -191,7 +191,7 @@ impl GameAsPlayer {
     }
     if let Some(finished_task) = finished_task {
       if !is_imp {
-        self.game.note_finished_task(self.my_uuid, finished_task)?;
+        self.state.note_finished_task(self.my_uuid, finished_task)?;
         self
           .socket
           .send(&ClientToServerMessage::FinishedTask(finished_task))?;
@@ -201,7 +201,7 @@ impl GameAsPlayer {
   }
 
   pub fn connected(&mut self) -> Result<(), String> {
-    self.game.status = GameStatus::Lobby;
+    self.state.status = GameStatus::Lobby;
     self.socket.send(&ClientToServerMessage::Join(
       self
         .local_player()
@@ -211,15 +211,15 @@ impl GameAsPlayer {
   }
 
   pub fn disconnected(&mut self) -> Result<(), String> {
-    match self.game.status {
+    match self.state.status {
       GameStatus::Won(_) => (), // do nothing, this is expected
-      _ => self.game.status = GameStatus::Disconnected,
+      _ => self.state.status = GameStatus::Disconnected,
     };
     Ok(())
   }
 
   pub fn handle_msg(&mut self, message: ServerToClientMessage) -> Result<(), String> {
-    if self.game.status.finished() {
+    if self.state.status.finished() {
       return Ok(()); // Nothing more to say. Refresh for a new game!
     }
     match message {
@@ -229,19 +229,19 @@ impl GameAsPlayer {
         players,
       }) => {
         println!("{:?} received snapshot.", self.my_uuid);
-        self.game.status = status;
-        self.game.bodies = bodies;
+        self.state.status = status;
+        self.state.bodies = bodies;
         // handle disconnections
         let server_uuids: BTreeSet<_> = players.iter().map(|p| p.uuid).collect();
-        let local_uuids: BTreeSet<_> = self.game.players.iter().map(|(u, _)| *u).collect();
+        let local_uuids: BTreeSet<_> = self.state.players.iter().map(|(u, _)| *u).collect();
         for uuid in local_uuids.difference(&server_uuids) {
-          self.game.players.remove(uuid);
+          self.state.players.remove(uuid);
         }
 
         for player in players {
-          match self.game.players.get_mut(&player.uuid) {
+          match self.state.players.get_mut(&player.uuid) {
             None => {
-              self.game.players.insert(player.uuid, player);
+              self.state.players.insert(player.uuid, player);
             }
             Some(local_player) => {
               let Player {

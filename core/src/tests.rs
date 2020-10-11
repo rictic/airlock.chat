@@ -44,8 +44,8 @@ impl TestEnvironment {
       .insert(uuid, vec![]);
     self.players.insert(uuid, player);
     self.player_queue.insert(uuid, queue);
-    if self.game_server.game.status == GameStatus::Connecting {
-      self.game_server.game.status = GameStatus::Lobby;
+    if self.game_server.state.status == GameStatus::Connecting {
+      self.game_server.state.status = GameStatus::Lobby;
     }
     uuid
   }
@@ -121,21 +121,21 @@ impl TestEnvironment {
   fn expect_everyone_agrees_on_game_state(
     &self,
     expected_num_players: usize,
-  ) -> Result<Game, Box<dyn Error>> {
-    let server_state = self.game_server.game.clone();
+  ) -> Result<GameState, Box<dyn Error>> {
+    let server_state = self.game_server.state.clone();
     assert_eq!(self.players.len(), expected_num_players);
     for (_, game_as_player) in self.players.iter() {
       // Will eventually need to customize this more, because players will
       // only know a subset.
-      assert_eq!(&server_state, &game_as_player.game);
+      assert_eq!(&server_state, &game_as_player.state);
     }
     Ok(server_state)
   }
 
   fn time_passes(&mut self, elapsed: f64) {
-    self.game_server.game.simulate(elapsed);
+    self.game_server.state.simulate(elapsed);
     for (_, player) in self.players.iter_mut() {
-      player.game.simulate(elapsed);
+      player.state.simulate(elapsed);
     }
   }
 
@@ -275,7 +275,7 @@ fn test_movement() -> Result<(), Box<dyn Error>> {
 
   let player_positions: HashMap<UUID, Position> = env
     .game_server
-    .game
+    .state
     .players
     .iter()
     .map(|(u, p)| (*u, p.position))

@@ -39,7 +39,7 @@ impl GameWrapper {
       .game
       .lock()
       .expect("Internal Error: could not get a lock on the game");
-    if game.game.status.finished() {
+    if game.state.status.finished() {
       return Ok(());
     }
     game
@@ -61,10 +61,10 @@ impl GameWrapper {
       .game
       .lock()
       .expect("Internal Error: could not get a lock on the game");
-    if game.game.status == GameStatus::Connecting {
+    if game.state.status == GameStatus::Connecting {
       return Ok(false);
     }
-    Ok(game.game.simulate(elapsed))
+    Ok(game.state.simulate(elapsed))
   }
 
   pub fn draw(&mut self) -> Result<(), JsValue> {
@@ -77,7 +77,7 @@ impl GameWrapper {
   pub fn get_status(&self) -> String {
     let game = self.game.lock().unwrap();
     let local_player = game.local_player();
-    match game.game.status {
+    match game.state.status {
       GameStatus::Connecting => "Conecting to game...".to_string(),
       GameStatus::Disconnected => "Disconnected from server.".to_string(),
       GameStatus::Lobby => {

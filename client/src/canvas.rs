@@ -159,7 +159,7 @@ impl Canvas {
     // bodies, then imps. That way imps can stand on top of bodies.
     // However maybe we should instead draw items from highest to lowest, vertically?
     if let Some(local_player) = game.local_player() {
-      if game.game.status == GameStatus::Playing {
+      if game.state.status == GameStatus::Playing {
         for task in local_player.tasks.iter() {
           if task.finished {
             continue;
@@ -168,10 +168,10 @@ impl Canvas {
         }
       }
     }
-    for body in game.game.bodies.iter() {
+    for body in game.state.bodies.iter() {
       self.draw_body(*body)?;
     }
-    for (_, player) in game.game.players.iter() {
+    for (_, player) in game.state.players.iter() {
       if show_dead_people || !player.dead {
         self.draw_player(player)?
       }

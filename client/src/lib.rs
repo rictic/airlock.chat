@@ -73,7 +73,7 @@ impl Canvas {
         for body in game.state.bodies.iter() {
             self.draw_body(*body)?;
         }
-        for player in game.state.players.iter() {
+        for (_, player) in game.state.players.iter() {
             if show_dead_people || !player.dead {
                 self.draw_player(player)?
             }

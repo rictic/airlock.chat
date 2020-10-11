@@ -77,7 +77,7 @@ impl Server {
       let prev_game_finished;
       {
         let game_server = self.game_server.lock().unwrap();
-        prev_game_finished = game_server.game.status.finished();
+        prev_game_finished = game_server.state.status.finished();
       }
       if prev_game_finished {
         // The previous game is finished. Create a new game and direct future players to it.
@@ -133,8 +133,8 @@ async fn handle_connection(
 
   {
     let mut game_server_unlocked = game_server.lock().unwrap();
-    if game_server_unlocked.game.status == GameStatus::Connecting {
-      game_server_unlocked.game.status = GameStatus::Lobby;
+    if game_server_unlocked.state.status == GameStatus::Connecting {
+      game_server_unlocked.state.status = GameStatus::Lobby;
       tokio::spawn(simulation_loop(game_server.clone()));
     }
   }

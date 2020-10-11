@@ -77,7 +77,7 @@ impl Server {
       let prev_game_finished;
       {
         let game_server = self.game_server.lock().unwrap();
-        prev_game_finished = game_server.game.status.finished();
+        prev_game_finished = game_server.state.status.finished();
       }
       if prev_game_finished {
         // The previous game is finished. Create a new game and direct future players to it.
@@ -106,7 +106,7 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>) {
     prev = now;
     let mut game_server = game_server.lock().unwrap();
     game_server.simulate(elapsed.as_millis() as f64);
-    if game_server.game.status.finished() {
+    if game_server.state.status.finished() {
       println!("Game finished, done simulating it on the server.");
       break;
     }
@@ -133,8 +133,8 @@ async fn handle_connection(
 
   {
     let mut game_server_unlocked = game_server.lock().unwrap();
-    if game_server_unlocked.game.status == GameStatus::Connecting {
-      game_server_unlocked.game.status = GameStatus::Lobby;
+    if game_server_unlocked.state.status == GameStatus::Connecting {
+      game_server_unlocked.state.status = GameStatus::Lobby;
       tokio::spawn(simulation_loop(game_server.clone()));
     }
   }

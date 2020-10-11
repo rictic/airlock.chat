@@ -1,10 +1,13 @@
 use std::error::Error;
 use std::fmt::Display;
+use std::time::Duration;
+use std::time::Instant;
 use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
+use tokio::time::delay_for;
 
 use futures_channel::mpsc::{unbounded, UnboundedSender};
 use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
@@ -72,12 +75,42 @@ impl Server {
     async fn serve(&mut self) {
         // Let's spawn the handling of each connection in a separate task.
         while let Ok((stream, addr)) = self.listener.accept().await {
+            let prev_game_finished;
+            {
+                let game_server = self.game_server.lock().unwrap();
+                prev_game_finished = game_server.state.status.finished();
+            }
+            if prev_game_finished {
+                // The previous game is finished. Create a new game and direct future players to it.
+                let room = Room::default();
+                let broadcast_server = BroadCastServer { room: room.clone() };
+                self.room = room;
+                self.game_server =
+                    Arc::new(Mutex::new(GameServer::new(Box::new(broadcast_server))));
+                println!("Starting a new game for the new client!");
+            }
             tokio::spawn(handle_connection(
                 self.game_server.clone(),
                 self.room.clone(),
                 stream,
                 addr,
             ));
+        }
+    }
+}
+
+async fn simulation_loop(game_server: Arc<Mutex<GameServer>>) {
+    let mut prev = Instant::now();
+    loop {
+        delay_for(Duration::from_millis(16)).await;
+        let now = Instant::now();
+        let elapsed = now - prev;
+        prev = now;
+        let mut game_server = game_server.lock().unwrap();
+        game_server.simulate(elapsed.as_millis() as f64);
+        if game_server.state.status.finished() {
+            println!("Game finished, done simulating it on the server.");
+            break;
         }
     }
 }
@@ -99,6 +132,14 @@ async fn handle_connection(
 
     // Insert the write part of this peer to the peer map.
     let (tx, rx) = unbounded();
+
+    {
+        let mut game_server_unlocked = game_server.lock().unwrap();
+        if game_server_unlocked.state.status == GameStatus::Connecting {
+            game_server_unlocked.state.status = GameStatus::Lobby;
+            tokio::spawn(simulation_loop(game_server.clone()));
+        }
+    }
 
     let uuid: UUID;
     println!("Waiting on initial message...");

@@ -53,6 +53,14 @@ impl Position {
             .sqrt()
             .abs()
     }
+
+    fn random() -> Position {
+        let mut rng = rand::thread_rng();
+        Position {
+            x: rng.gen_range(30.0, WIDTH - 30.0),
+            y: rng.gen_range(30.0, HEIGHT - 30.0),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -158,7 +166,7 @@ pub enum ClientToServerMessage {
     Killed(DeadBody),
     FinishedTask(FinishedTask),
     Join(Player),
-    StartGame(StartGame),
+    StartGame(),
 }
 
 impl ClientToServerMessage {
@@ -169,7 +177,7 @@ impl ClientToServerMessage {
             ClientToServerMessage::Killed(_) => "Killed",
             ClientToServerMessage::FinishedTask(_) => "FinishedTask",
             ClientToServerMessage::Join(_) => "Join",
-            ClientToServerMessage::StartGame(_) => "StartGame",
+            ClientToServerMessage::StartGame() => "StartGame",
         }
     }
 }
@@ -447,14 +455,7 @@ impl GameAsPlayer {
     }
 
     fn start(&mut self) -> Result<(), String> {
-        // todo, pick this on the server
-        let impostor_index = rand::thread_rng().gen_range(0, self.state.players.len());
-        let impostor = &self.state.players[impostor_index];
-        let impostors = vec![impostor.uuid];
-        let start_data = StartGame { impostors };
-        self.state.note_game_started(&start_data)?;
-        self.socket
-            .send(&ClientToServerMessage::StartGame(start_data))?;
+        self.socket.send(&ClientToServerMessage::StartGame())?;
         Ok(())
     }
 }
@@ -523,17 +524,26 @@ impl GameState {
         Ok(())
     }
 
-    fn note_game_started(&mut self, start_data: &StartGame) -> Result<(), String> {
+    fn note_game_started(&mut self) -> Result<(), String> {
         if self.status != GameStatus::Lobby {
             return Err(format!("Internal error: got a message to start a game when not in the lobby!? Game status: {:?}", self.status));
         }
+        let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
+        let impostor = &self.players[impostor_index];
+        let impostors = vec![impostor.uuid];
         self.status = GameStatus::Playing;
         for player in self.players.iter_mut() {
-            for impostor_uuid in start_data.impostors.iter() {
+            for impostor_uuid in impostors.iter() {
                 if player.uuid == *impostor_uuid {
                     player.impostor = true;
                 }
             }
+            player.tasks = (0..6)
+                .map(|_| Task {
+                    finished: false,
+                    position: Position::random(),
+                })
+                .collect();
         }
         Ok(())
     }
@@ -595,7 +605,7 @@ impl GameState {
 // Useful so that we can implement a real game server with web sockets, and the test
 // game server, and potentially a future peer to peer in-client server.
 pub struct GameServer {
-    state: GameState,
+    pub state: GameState,
     broadcaster: Box<dyn Broadcaster>,
 }
 
@@ -610,12 +620,10 @@ pub trait Broadcaster: Send {
 
 impl GameServer {
     pub fn new(broadcaster: Box<dyn Broadcaster>) -> GameServer {
-        let mut gs = GameServer {
+        GameServer {
             state: GameState::new(vec![]),
             broadcaster,
-        };
-        gs.state.status = GameStatus::Lobby;
-        gs
+        }
     }
 
     pub fn simulate(&mut self, elapsed: f64) {
@@ -625,6 +633,9 @@ impl GameServer {
     pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
         self.state.players.retain(|p| p.uuid != disconnected_player);
         self.broadcast_snapshot()?;
+        if self.state.players.is_empty() {
+            self.state.status = GameStatus::Disconnected;
+        }
         Ok(())
     }
 
@@ -635,8 +646,15 @@ impl GameServer {
     ) -> Result<(), Box<dyn Error>> {
         println!("Game server handling {:?}", message);
         match message {
-            ClientToServerMessage::StartGame(start) => {
-                self.state.note_game_started(&start)?;
+            ClientToServerMessage::StartGame() => {
+                if self.state.status != GameStatus::Lobby {
+                    print!(
+                        "Player {} tried to start a game from state {:?}",
+                        sender, self.state.status
+                    );
+                    return Ok(());
+                }
+                self.state.note_game_started()?;
                 self.broadcast_snapshot()?;
             }
             ClientToServerMessage::Killed(body) => {
@@ -753,6 +771,9 @@ mod tests {
                 .insert(uuid, vec![]);
             self.players.insert(uuid, player);
             self.player_queue.insert(uuid, queue);
+            if self.game_server.state.status == GameStatus::Connecting {
+                self.game_server.state.status = GameStatus::Lobby;
+            }
             uuid
         }
 

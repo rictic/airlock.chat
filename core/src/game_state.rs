@@ -407,12 +407,19 @@ impl NightState {
       *vote_count.entry(*target).or_insert(0) += 1;
     }
     // The winner is the one with the most votes!
-    let winner = vote_count
-      .iter()
-      .max_by_key(|(_target, count)| *count)
-      .map(|(target, _count)| *target);
+    let mut targets_and_votes = vote_count.iter().collect::<Vec<_>>();
+    targets_and_votes.sort_by_key(|(_target, count)| *count);
+    if let Some((winner, winner_votes)) = targets_and_votes.get(0) {
+      if let Some((_runner_up, runner_up_votes)) = targets_and_votes.get(1) {
+        if runner_up_votes == winner_votes {
+          // In case of a tie, skip
+          return VoteTarget::Skip
+        }
+      }
+      return **winner;
+    }
     // If no one voted, it's skip.
-    winner.unwrap_or(VoteTarget::Skip)
+    VoteTarget::Skip
   }
 }
 

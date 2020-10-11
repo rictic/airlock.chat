@@ -13,5 +13,9 @@
 			"path": "."
 		},
 	],
-	"settings": {}
+	"settings": {
+		"files.exclude": {
+			"target/**": true
+		}
+	}
 }

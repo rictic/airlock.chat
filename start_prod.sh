@@ -18,4 +18,5 @@ fi
 
 # kill the previous server, if any
 kill `ps aux | grep -v grep | grep target/release/prod | tr -s ' ' | cut -d ' ' -f 2`
-nohup ./target/release/prod &
+nohup ./target/release/prod >./nohup.out &
+tail -f nohup.out

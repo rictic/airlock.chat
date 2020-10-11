@@ -35,17 +35,32 @@ impl GameTx for WebSocketTx {
   }
 }
 
+fn get_websocket_url() -> Result<String, JsValue> {
+  let location = web_sys::window().ok_or("no window")?.location();
+  let scheme = location.protocol()?;
+  let port = location.port()?;
+  let hostname = location.hostname()?;
+
+  if scheme == "https:" {
+    // we're in prod, just use the prod URL
+    return Ok(format!("wss://{}/", hostname));
+  }
+
+  if port == "8080" {
+    // we're in dev mode, use the dev mode port
+    return Ok(format!("ws://{}:3012/", hostname));
+  }
+
+  // we're running the prod server locally without TLS
+  Ok(format!("ws://{}/", hostname))
+}
+
 // Creates a websocket and hooks it up to the callbacks on the given GameAsPlayer.
 pub fn create_websocket_and_listen(
   game_as_player: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>>,
   join: Join,
 ) -> Result<Box<dyn GameTx>, JsValue> {
-  let hostname = web_sys::window()
-    .ok_or("no window")?
-    .location()
-    .hostname()?;
-
-  let ws = WebSocket::new(&format!("ws://{}:3012/", hostname))?;
+  let ws = WebSocket::new(&get_websocket_url()?)?;
 
   let game_as_player_clone = game_as_player.clone();
   let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {

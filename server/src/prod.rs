@@ -1,16 +1,17 @@
 mod server;
 
-use crate::server::Server;
+use crate::server::{client_connected, WebsocketServer};
 use futures::join;
 use std::error::Error;
-use std::net::SocketAddr;
 use std::path::Path;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::Mutex;
 use warp::Filter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let path_str = "./server/dist";
-  let path = Path::new(path_str);
+  let path = Path::new("./server/dist");
   if !path.exists() {
     return Err(
       r"Web directory isn't built. Be sure to do (cd www && npm run build) first.
@@ -18,35 +19,49 @@ Also this server must be run from the server directory."
         .into(),
     );
   }
-  let f1 = tokio::spawn(serve_websocket(([0, 0, 0, 0], 3012).into()));
-  let f2 = tokio::spawn(serve_static_files(([0, 0, 0, 0], 80).into(), path_str));
-  let (r1, r2) = join!(f1, f2);
-  r1?;
-  match r2? {
-    Ok(_) => (),
-    Err(e) => println!("Error: {}", e),
-  }
-  Ok(())
-}
 
-// Run a websocket game server.
-async fn serve_websocket(addr: SocketAddr) {
-  let mut server = Server::new(addr).await.unwrap();
-  println!("Listening for websocket traffic on: {}", addr);
-  server.serve().await;
-}
-
-// Run a webserver that serves out static files.
-pub async fn serve_static_files(
-  addr: SocketAddr,
-  path: &'static str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+  // Define the static file server.
   // TODO when I'm smarter, figure out to compress with the best available
   // compression algorithm.
   let fileserver = warp::fs::dir(path).with(warp::compression::gzip());
-  let server = warp::serve(fileserver).run(addr);
-  println!("Listening for static file traffic on http://{}", addr);
-  server.await;
+
+  // Define the websocket server
+  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::default();
+  let gameserver = warp::any().map(move || gameserver.clone());
+  let websocket_server = warp::ws()
+    .and(gameserver)
+    .map(|ws: warp::ws::Ws, gameserver| {
+      ws.on_upgrade(move |socket| client_connected(socket, gameserver))
+    });
+
+  // If an incoming request looks like a websockets request, serve it as one,
+  // otherwise treat it as a request for a static file
+  let server = websocket_server.or(fileserver);
+
+  // Managed by certbot, see https://certbot.eff.org/lets-encrypt/debianbuster-other
+  let privkey = Path::new("/etc/letsencrypt/live/airlock.chat/privkey.pem");
+  let cert = Path::new("/etc/letsencrypt/live/airlock.chat/cert.pem");
+
+  if privkey.exists() && cert.exists() {
+    let tls_server = warp::serve(server)
+      .tls()
+      .cert_path(cert)
+      .key_path(privkey)
+      .run(([0, 0, 0, 0], 443));
+    let http_server = warp::serve(warp::path::tail().map(move |path: warp::path::Tail| {
+      warp::redirect::redirect(
+        warp::http::Uri::from_str(&format!("https://airlock.chat/{}", path.as_str()))
+          .expect("illegal URL path?"),
+      )
+    }))
+    .run(([0, 0, 0, 0], 80));
+    println!("Listening for static file traffic on https://airlock.chat/");
+    join!(tls_server, http_server);
+  } else {
+    let server = warp::serve(server).run(([0, 0, 0, 0], 80));
+    println!("Listening for static file traffic on http://localhost");
+    server.await;
+  }
 
   Ok(())
 }

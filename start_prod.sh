@@ -8,7 +8,6 @@ echo "Building client..."
 (cd client && wasm-pack build --release && cd ../www && npm run build)
 rm -rf server/dist/
 cp -r www/dist server/dist
-gzip -9 server/dist/*
 echo "Client built, building the server..."
 cargo build --release
 

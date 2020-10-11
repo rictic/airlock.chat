@@ -12,3 +12,5 @@ wasm-pack.log
 
 /core/target/
 /target/
+
+nohup.out

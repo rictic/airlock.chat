@@ -14,7 +14,7 @@ cargo build --release
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   echo "Running sudo setcap to allow prod server to bind to low ports"
-  sudo setcap CAP_NET_BIND_SERVICE=+eip server/target/release/prod
+  sudo setcap CAP_NET_BIND_SERVICE=+eip target/release/prod
 fi
 
 # kill the previous server, if any

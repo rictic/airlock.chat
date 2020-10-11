@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "server",
+    "client",
+    "core",
+]
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

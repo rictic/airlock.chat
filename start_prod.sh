@@ -1,6 +1,3 @@
-# When this shell script exits, kill all child jobs.
-trap 'echo $(jobs -p)' EXIT
-
 if test -d "www/node_modules"; then
   echo 'skipping npm install'
 else
@@ -13,7 +10,7 @@ rm -rf server/dist/
 cp -r www/dist server/dist
 gzip -9 server/dist/*
 echo "Client built, building the server..."
-(cd server && cargo build --release)
+cargo build --release
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   echo "Running sudo setcap to allow prod server to bind to low ports"
@@ -22,4 +19,4 @@ fi
 
 # kill the previous server, if any
 kill `ps aux | grep -v grep | grep target/release/prod | tr -s ' ' | cut -d ' ' -f 2`
-(cd server && nohup target/release/prod) &
+nohup ./target/release/prod &

@@ -118,7 +118,7 @@ impl Canvas {
         // bodies, then imps. That way imps can stand on top of bodies.
         // However maybe we should instead draw items from highest to lowest, vertically?
         if let Some(local_player) = game.local_player() {
-            if game.game.status == GameStatus::Playing {
+            if game.state.status == GameStatus::Playing {
                 for task in local_player.tasks.iter() {
                     if task.finished {
                         continue;
@@ -127,10 +127,10 @@ impl Canvas {
                 }
             }
         }
-        for body in game.game.bodies.iter() {
+        for body in game.state.bodies.iter() {
             self.draw_body(*body)?;
         }
-        for (_, player) in game.game.players.iter() {
+        for (_, player) in game.state.players.iter() {
             if show_dead_people || !player.dead {
                 self.draw_player(player)?
             }
@@ -321,7 +321,7 @@ impl GameWrapper {
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if game.game.status.finished() {
+        if game.state.status.finished() {
             return Ok(());
         }
         game.take_input(InputState {
@@ -342,10 +342,10 @@ impl GameWrapper {
             .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if game.game.status == GameStatus::Connecting {
+        if game.state.status == GameStatus::Connecting {
             return Ok(false);
         }
-        Ok(game.game.simulate(elapsed))
+        Ok(game.state.simulate(elapsed))
     }
 
     pub fn draw(&mut self) -> Result<(), JsValue> {
@@ -357,7 +357,7 @@ impl GameWrapper {
     pub fn get_status(&self) -> String {
         let game = self.game.lock().unwrap();
         let local_player = game.local_player();
-        match game.game.status {
+        match game.state.status {
             GameStatus::Connecting => "Conecting to game...".to_string(),
             GameStatus::Disconnected => "Disconnected from server.".to_string(),
             GameStatus::Lobby => {

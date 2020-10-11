@@ -531,7 +531,7 @@ impl GameState {
         self.players.get_mut(&uuid)
     }
 
-    fn simulate_internal(&mut self, elapsed: f64) -> Result<(), &'static str> {
+    pub fn simulate(&mut self, elapsed: f64) -> bool {
         // elapsed is the time, in milliseconds, that has passed since the
         // last time we simulated.
         // By making our simulations relative to the amount of time that's passed,
@@ -548,15 +548,7 @@ impl GameState {
             // get out of sync.
         }
 
-        Ok(())
-    }
-
-    pub fn simulate(&mut self, elapsed: f64) -> Option<String> {
-        let result = self.simulate_internal(elapsed);
-        match result {
-            Ok(()) => None,
-            Err(s) => Some(s.to_string()),
-        }
+        self.status.finished()
     }
 
     fn win(&mut self, team: Team) -> Result<(), String> {
@@ -568,6 +560,7 @@ impl GameState {
         if self.status != GameStatus::Lobby {
             return Err(format!("Internal error: got a message to start a game when not in the lobby!? Game status: {:?}", self.status));
         }
+        self.status = GameStatus::Playing;
         let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
         for (i, (_, player)) in self.players.iter_mut().enumerate() {
             if i == impostor_index {
@@ -660,8 +653,8 @@ impl GameServer {
         }
     }
 
-    pub fn simulate(&mut self, elapsed: f64) {
-        self.state.simulate(elapsed);
+    pub fn simulate(&mut self, elapsed: f64) -> bool {
+        self.state.simulate(elapsed)
     }
 
     pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {

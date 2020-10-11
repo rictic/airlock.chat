@@ -12,7 +12,7 @@ echo "Building client..."
 rm -rf server/dist
 cp -r www/dist server/dist
 gzip -9 server/dist/*
-echo "Client built, building server..."
+echo "Client built, building the server..."
 (cd server && cargo build --release)
 
 echo "Actually starting the prod server is still manual because it binds to port 80..."

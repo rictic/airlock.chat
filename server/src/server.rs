@@ -105,8 +105,8 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>) {
     let elapsed = now - prev;
     prev = now;
     let mut game_server = game_server.lock().unwrap();
-    game_server.simulate(elapsed.as_millis() as f64);
-    if game_server.state.status.finished() {
+    let finished = game_server.simulate(elapsed.as_millis() as f64);
+    if finished {
       println!("Game finished, done simulating it on the server.");
       break;
     }

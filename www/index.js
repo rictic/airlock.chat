@@ -1,5 +1,7 @@
 import * as wasm from '../client/pkg/rust_us';
 
+const perf = document.createElement('div');
+document.body.appendChild(perf);
 const output = document.createElement('div');
 document.body.appendChild(output);
 
@@ -20,20 +22,13 @@ function drawOneFrame() {
   const timestamp = performance.now();
   const elapsed = timestamp - previousFrameTime;
   previousFrameTime = timestamp;
-  const simError = game.simulate(elapsed);
+  const finished = game.simulate(elapsed);
   const afterSim = performance.now();
   const simTime = afterSim - timestamp;
-  const drawError = game.draw();
+  game.draw();
   const afterDraw = performance.now();
   const drawTime = afterDraw - afterSim;
-  const maybeError = simError || drawError;
-  let message;
-  if (maybeError == null) {
-    message = 'All is well.';
-  } else {
-    output.innerText = `${maybeError}`;
-    return;
-  }
+  let message = game.get_status();
   if (simTimes.length < 100) {
     simTimes.push(simTime);
   } else {
@@ -50,11 +45,15 @@ function drawOneFrame() {
   } else {
     totalTimes[perfIdx] = elapsed;
   }
-  message += ` – ${average(simTimes).toFixed(1)}ms sim`;
-  message += ` – ${average(drawTimes).toFixed(1)}ms draw`;
-  message += ` – ${(1000 / average(totalTimes)).toFixed(1)}fps`;
+  let perfMessage = 'Speed stats';
+  perfMessage += ` - ${average(simTimes).toFixed(1)}ms sim`;
+  perfMessage += ` – ${average(drawTimes).toFixed(1)}ms draw`;
+  perfMessage += ` – ${(1000 / average(totalTimes)).toFixed(1)}fps`;
   output.innerText = message;
-  requestAnimationFrame(drawOneFrame);
+  perf.innerText = perfMessage;
+  if (!finished) {
+    requestAnimationFrame(drawOneFrame);
+  }
 }
 requestAnimationFrame(drawOneFrame);
 
@@ -71,6 +70,9 @@ const knownButtons = new Set([
     'arrowup', 'arrowdown', 'arrowleft', 'arrowright'
 ]);
 const heldButtons = {};
+for (const button of knownButtons) {
+  heldButtons[button] = false;
+}
 function updateInput() {
   const up = heldButtons['w'] || heldButtons['arrowup'];
   const down = heldButtons['s'] || heldButtons['arrowdown'];

@@ -115,6 +115,9 @@ impl Canvas {
     context.rect(0.0, 0.0, self.width, self.height);
     context.set_fill_style(&JsValue::from_str("#f3f3f3"));
     context.fill();
+    if game.state.status == GameStatus::Connecting {
+      return Ok(());
+    }
 
     // Move the
     self.camera = match game.local_player() {
@@ -181,6 +184,7 @@ impl Canvas {
   }
 
   fn draw_player(&self, player: &Player) -> Result<(), &'static str> {
+    // draw circle
     self.context.begin_path();
     let radius = 10.0;
     self.move_to(player.position.x + radius, player.position.y);
@@ -193,6 +197,7 @@ impl Canvas {
         std::f64::consts::PI * 2.0,
       )
       .map_err(|_| "Failed to draw a circle.")?;
+
     let color = if player.dead {
       JsValue::from(format!("{}88", player.color.to_str()))
     } else {
@@ -207,6 +212,21 @@ impl Canvas {
     self.context.set_stroke_style(&stroke_color);
     self.context.fill();
     self.context.stroke();
+
+    // draw name
+    if !player.dead {
+      self.context.set_text_align("center");
+      self.context.set_font(&format!(
+        "{}px Arial Black",
+        (12.0 * self.camera.zoom).floor()
+      ));
+      self.context.set_fill_style(&JsValue::from("#000"));
+      self.context.set_stroke_style(&JsValue::from("#fff"));
+      self.context.set_line_width(self.camera.zoom);
+      self.stroke_text(&player.name, player.position.x, player.position.y - 14.0)?;
+      self.fill_text(&player.name, player.position.x, player.position.y - 14.0)?;
+    }
+
     Ok(())
   }
 
@@ -289,5 +309,21 @@ impl Canvas {
       .context
       .arc(x, y, radius, start_angle, end_angle)
       .map_err(|_| "Failed to draw a circle.")
+  }
+
+  fn fill_text(&self, text: &str, x: f64, y: f64) -> Result<(), &'static str> {
+    let (x, y) = self.camera.offset(x, y);
+    self
+      .context
+      .fill_text(&text, x, y)
+      .map_err(|_| "Failed to fill in text.")
+  }
+
+  fn stroke_text(&self, text: &str, x: f64, y: f64) -> Result<(), &'static str> {
+    let (x, y) = self.camera.offset(x, y);
+    self
+      .context
+      .stroke_text(&text, x, y)
+      .map_err(|_| "Failed to draw text outline.")
   }
 }

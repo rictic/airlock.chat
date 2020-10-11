@@ -1,6 +1,5 @@
 use crate::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -31,27 +30,9 @@ pub trait GameTx {
 
 // A game from the perspective of a particular player.
 impl GameAsPlayer {
-  pub fn new(socket: Box<dyn GameTx>) -> GameAsPlayer {
-    let my_uuid = UUID::random();
-    let starting_position_seed: f64 = rand::random();
-    let local_player = Player {
-      uuid: my_uuid,
-      color: Color::random(),
-      dead: false,
-      position: Position {
-        x: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
-        y: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
-      },
-      impostor: false,
-      // 6 random tasks
-      tasks: vec![],
-      speed: Speed { dx: 0.0, dy: 0.0 },
-    };
-
-    let mut players = BTreeMap::new();
-    players.insert(local_player.uuid, local_player);
+  pub fn new(uuid: UUID, socket: Box<dyn GameTx>) -> GameAsPlayer {
     GameAsPlayer {
-      state: GameState::new(players),
+      state: GameState::new(),
       inputs: InputState {
         up: false,
         down: false,
@@ -62,7 +43,7 @@ impl GameAsPlayer {
         report: false,
         play: false,
       },
-      my_uuid,
+      my_uuid: uuid,
       socket,
     }
   }
@@ -200,14 +181,8 @@ impl GameAsPlayer {
     Ok(())
   }
 
-  pub fn connected(&mut self) -> Result<(), String> {
-    self.state.status = GameStatus::Lobby;
-    self.socket.send(&ClientToServerMessage::Join(
-      self
-        .local_player()
-        .expect("Internal error: could not get local player during init")
-        .clone(),
-    ))
+  pub fn connected(&mut self, join: Join) -> Result<(), String> {
+    self.socket.send(&ClientToServerMessage::Join(join))
   }
 
   pub fn disconnected(&mut self) -> Result<(), String> {
@@ -245,6 +220,7 @@ impl GameAsPlayer {
             }
             Some(local_player) => {
               let Player {
+                name,
                 uuid: _uuid,
                 color,
                 dead,
@@ -253,6 +229,7 @@ impl GameAsPlayer {
                 position,
                 speed,
               } = player;
+              local_player.name = name;
               local_player.color = color;
               local_player.dead = dead;
               local_player.impostor = impostor;

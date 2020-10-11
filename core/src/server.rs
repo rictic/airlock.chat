@@ -1,5 +1,4 @@
 use crate::*;
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
 
@@ -17,7 +16,7 @@ pub struct GameServer {
 impl GameServer {
   pub fn new(broadcaster: Box<dyn Broadcaster>) -> GameServer {
     GameServer {
-      state: GameState::new(BTreeMap::new()),
+      state: GameState::new(),
       last_message_received_at: Instant::now(),
       broadcaster,
     }
@@ -75,9 +74,13 @@ impl GameServer {
         }
         self.broadcast_snapshot()?;
       }
-      ClientToServerMessage::Join(mut player) => {
+      ClientToServerMessage::Join(Join {
+        uuid,
+        name,
+        preferred_color,
+      }) => {
         if self.state.status == GameStatus::Lobby {
-          if self.state.players.get(&player.uuid).is_some() {
+          if self.state.players.get(&uuid).is_some() {
             return Ok(()); // we know about this player already
           }
           // ok, it's a new player, and we have room for them. if their color is
@@ -85,23 +88,27 @@ impl GameServer {
           let taken_colors: BTreeSet<Color> =
             self.state.players.iter().map(|(_, p)| p.color).collect();
           let add_player;
-          if taken_colors.contains(&player.color) {
+          let mut color = preferred_color;
+          if taken_colors.contains(&color) {
             match Color::all().iter().find(|c| !taken_colors.contains(c)) {
               None => {
                 add_player = false; // we can't add this player, all colors are taken!
               }
               Some(c) => {
                 add_player = true;
-                player.color = *c;
+                color = *c;
               }
             }
           } else {
-            // player's color wasn't taken, they're good to go!
+            // player's preferred color wasn't taken, they're good to go!
             add_player = true;
           }
           if add_player {
-            // We've added the new player (possibly with a new color)
-            self.state.players.insert(player.uuid, player);
+            // Add the new player (possibly with a new color)
+            self
+              .state
+              .players
+              .insert(uuid, Player::new(uuid, name, color));
           }
         }
 

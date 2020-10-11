@@ -33,9 +33,12 @@ impl TestEnvironment {
   // fake network, but doesn't send any messages.
   fn create_player(&mut self) -> UUID {
     let queue: Arc<Mutex<Vec<ClientToServerMessage>>> = Arc::default();
-    let player = GameAsPlayer::new(Box::new(TestPlayerTx {
-      messages: queue.clone(),
-    }));
+    let player = GameAsPlayer::new(
+      UUID::random(),
+      Box::new(TestPlayerTx {
+        messages: queue.clone(),
+      }),
+    );
     let uuid = player.my_uuid;
     self
       .server_to_client_queue
@@ -142,7 +145,11 @@ impl TestEnvironment {
   fn create_and_connect_player(&mut self) -> Result<UUID, Box<dyn Error>> {
     let player_count = self.players.len();
     let id = self.create_player();
-    self.players.get_mut(&id).unwrap().connected()?;
+    self.players.get_mut(&id).unwrap().connected(Join {
+      name: "Test Player".to_string(),
+      uuid: id,
+      preferred_color: Color::random(),
+    })?;
     self.dispatch_messages()?;
     self.expect_everyone_agrees_on_game_state(player_count + 1)?;
     Ok(id)
@@ -195,21 +202,33 @@ fn test_connection_and_disconnection() -> Result<(), Box<dyn Error>> {
   // P1 connects
   let player1_id = env.create_player();
   let player1 = env.players.get_mut(&player1_id).unwrap();
-  player1.connected()?;
+  player1.connected(Join {
+    name: "P1".to_string(),
+    uuid: player1_id,
+    preferred_color: Color::random(),
+  })?;
   env.dispatch_messages()?;
   env.expect_everyone_agrees_on_game_state(1)?;
 
   // P2 connects
   let player2_id = env.create_player();
   let player2 = env.players.get_mut(&player2_id).unwrap();
-  player2.connected()?;
+  player2.connected(Join {
+    name: "P2".to_string(),
+    uuid: player2_id,
+    preferred_color: Color::random(),
+  })?;
   env.dispatch_messages()?;
   env.expect_everyone_agrees_on_game_state(2)?;
 
   // P3 connects
   let player3_id = env.create_player();
   let player3 = env.players.get_mut(&player3_id).unwrap();
-  player3.connected()?;
+  player3.connected(Join {
+    name: "P3".to_string(),
+    uuid: player3_id,
+    preferred_color: Color::random(),
+  })?;
   env.dispatch_messages()?;
   let game = env.expect_everyone_agrees_on_game_state(3)?;
 

@@ -147,7 +147,7 @@ impl TestEnvironment {
     let id = self.create_player();
     self.players.get_mut(&id).unwrap().connected(Join {
       name: "Test Player".to_string(),
-      uuid: UUID::random(),
+      uuid: id,
       preferred_color: Color::random(),
     })?;
     self.dispatch_messages()?;
@@ -204,7 +204,7 @@ fn test_connection_and_disconnection() -> Result<(), Box<dyn Error>> {
   let player1 = env.players.get_mut(&player1_id).unwrap();
   player1.connected(Join {
     name: "P1".to_string(),
-    uuid: UUID::random(),
+    uuid: player1_id,
     preferred_color: Color::random(),
   })?;
   env.dispatch_messages()?;
@@ -215,7 +215,7 @@ fn test_connection_and_disconnection() -> Result<(), Box<dyn Error>> {
   let player2 = env.players.get_mut(&player2_id).unwrap();
   player2.connected(Join {
     name: "P2".to_string(),
-    uuid: UUID::random(),
+    uuid: player2_id,
     preferred_color: Color::random(),
   })?;
   env.dispatch_messages()?;
@@ -226,7 +226,7 @@ fn test_connection_and_disconnection() -> Result<(), Box<dyn Error>> {
   let player3 = env.players.get_mut(&player3_id).unwrap();
   player3.connected(Join {
     name: "P3".to_string(),
-    uuid: UUID::random(),
+    uuid: player3_id,
     preferred_color: Color::random(),
   })?;
   env.dispatch_messages()?;

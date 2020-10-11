@@ -2,6 +2,7 @@ use crate::replay::MaybeDecisionIfPlayingBackRecording::*;
 use crate::replay::{RecordingEntry, RecordingEvent};
 use crate::*;
 use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::time::Duration;
@@ -126,6 +127,55 @@ impl GameServer {
       ClientToServerMessage::Killed(body) => {
         self.state.note_death(*body)?;
         self.broadcast_snapshot()?;
+      }
+      ClientToServerMessage::ReportBody { dead_body_color } => {
+        match self.state.status {
+          GameStatus::Playing(PlayState::Night) => {
+            // This is fine.
+          }
+          _ => {
+            // Invalid time to report a body, ignore it
+            return Ok(None);
+          }
+        }
+        let body = match self
+          .state
+          .bodies
+          .iter()
+          .find(|b| b.color == *dead_body_color)
+        {
+          None => {
+            // No such body
+            return Ok(None);
+          }
+          Some(body) => body,
+        };
+        let reporter = match self.state.players.get(&sender) {
+          None => {
+            // Reporter is a spectator lol
+            return Ok(None);
+          }
+          Some(player) => {
+            if player.dead {
+              // ... but nobody came
+              return Ok(None);
+            }
+            player
+          }
+        };
+        let distance_between_reporter_and_body = reporter.position.distance(body.position);
+        let slop_for_latency = 32.0;
+        if distance_between_reporter_and_body
+          > self.state.settings.report_distance + slop_for_latency
+        {
+          // body is too far away to report it
+          return Ok(None);
+        }
+        // oh shit it's on
+        self.state.status = GameStatus::Playing(PlayState::Day(DayState {
+          votes: BTreeMap::new(),
+          time_remaining: self.state.settings.voting_time,
+        }));
       }
       ClientToServerMessage::FinishedTask(finished) => {
         self.state.note_finished_task(sender, *finished)?;

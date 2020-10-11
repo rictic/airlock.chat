@@ -68,6 +68,7 @@ impl GameAsPlayer {
     let is_killing = player.impostor && !current_input.kill && new_input.kill;
     let position = player.position;
     let activating = !current_input.activate && new_input.activate;
+    let reporting = !current_input.report && new_input.report;
     let starting_play =
       self.state.status == GameStatus::Lobby && !current_input.play && new_input.play;
     self.inputs = new_input;
@@ -82,6 +83,9 @@ impl GameAsPlayer {
     }
     if starting_play {
       self.start()?;
+    }
+    if reporting {
+      self.report_body_near(position)?;
     }
 
     let speed_changed: bool;
@@ -160,7 +164,7 @@ impl GameAsPlayer {
     let is_imp = local_player.impostor;
 
     let mut finished_task: Option<FinishedTask> = None;
-    for (index, task) in local_player.tasks.iter_mut().enumerate() {
+    for (index, task) in local_player.tasks.iter().enumerate() {
       let distance = position.distance(task.position);
       if distance < closest_distance {
         finished_task = Some(FinishedTask { index });
@@ -174,6 +178,24 @@ impl GameAsPlayer {
           .socket
           .send(&ClientToServerMessage::FinishedTask(finished_task))?;
       }
+    }
+    Ok(())
+  }
+
+  fn report_body_near(&mut self, position: Position) -> Result<(), String> {
+    let mut closest_distance = self.state.settings.report_distance;
+    let mut nearest_body_color: Option<Color> = None;
+    for body in self.state.bodies.iter() {
+      let distance = position.distance(body.position);
+      if distance < closest_distance {
+        nearest_body_color = Some(body.color);
+        closest_distance = distance;
+      }
+    }
+    if let Some(color) = nearest_body_color {
+      self.socket.send(&ClientToServerMessage::ReportBody {
+        dead_body_color: color,
+      })?;
     }
     Ok(())
   }

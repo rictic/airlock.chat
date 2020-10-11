@@ -20,6 +20,7 @@ pub struct Settings {
   pub speed: f64,
   pub kill_distance: f64,
   pub task_distance: f64,
+  pub report_distance: f64,
   pub voting_time: Duration,
 }
 impl Default for Settings {
@@ -28,6 +29,7 @@ impl Default for Settings {
       speed: 2.0,
       task_distance: 32.0,
       kill_distance: 64.0,
+      report_distance: 96.0,
       voting_time: Duration::from_secs(120),
     }
   }

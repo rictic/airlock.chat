@@ -14,6 +14,7 @@ pub enum ClientToServerMessage {
   Vote {
     target: VoteTarget,
   },
+  ReportBody { dead_body_color: Color },
   StartGame(),
 }
 
@@ -27,6 +28,7 @@ impl ClientToServerMessage {
       ClientToServerMessage::Join { .. } => "Join",
       ClientToServerMessage::StartGame() => "StartGame",
       ClientToServerMessage::Vote { .. } => "Vote",
+      ClientToServerMessage::ReportBody { .. } => "ReportBody",
     }
   }
 }

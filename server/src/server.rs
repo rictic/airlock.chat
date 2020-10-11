@@ -58,7 +58,12 @@ impl Broadcaster for BroadCastServer {
     let room = self.room.clone();
     let peers = room.lock().unwrap();
     let player_connection = match peers.get(uuid) {
-      None => return Err(format!("No player connection with UUID {:?}", uuid).into()),
+      None => {
+        // This could be a race condition with a player disconnecting.
+        // Not a fatal error.
+        println!("No player connection with UUID {:?}", uuid);
+        return Ok(());
+      }
       Some(p) => p,
     };
     println!("Sending {:?} to {:?}", message, uuid);

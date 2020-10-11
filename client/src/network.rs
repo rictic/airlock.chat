@@ -101,7 +101,11 @@ pub fn create_websocket_and_listen(
     }
     let clone = &game_as_player_clone.clone();
     let mut option_wrapped = clone.lock().unwrap();
-    let game_as_player = option_wrapped.as_mut().unwrap();
+    let game_as_player = match option_wrapped.as_mut() {
+      // Got a non-welcome message before our welcome message.
+      None => return,
+      Some(g) => g,
+    };
     match game_as_player.handle_msg(message) {
       Ok(()) => (),
       Err(e) => {

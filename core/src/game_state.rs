@@ -367,6 +367,9 @@ pub enum Color {
   White,
   Black,
   Green,
+  Yellow,
+  Purple,
+  Gray,
 }
 
 impl Color {
@@ -379,6 +382,9 @@ impl Color {
       Color::White,
       Color::Black,
       Color::Green,
+      Color::Yellow,
+      Color::Purple,
+      Color::Gray,
     ]
   }
 
@@ -391,6 +397,9 @@ impl Color {
       Color::White => "#ffffff",
       Color::Black => "#000000",
       Color::Green => "#01ff02",
+      Color::Yellow => "#ffff66",
+      Color::Purple => "#8a2be2",
+      Color::Gray => "#333333",
     }
   }
 

@@ -18,16 +18,33 @@ pub struct InputState {
   pub pause_playback: bool,
 }
 
+impl InputState {
+  // Returns an InputState with buttons set to true if they
+  // aren't pressed on self, but are set on newer_input.
+  fn get_new_presses(&self, newer_input: InputState) -> InputState {
+    InputState {
+      up: !self.up && newer_input.up,
+      down: !self.down && newer_input.down,
+      left: !self.left && newer_input.left,
+      right: !self.right && newer_input.right,
+      kill: !self.kill && newer_input.kill,
+      activate: !self.activate && newer_input.activate,
+      report: !self.report && newer_input.report,
+      play: !self.play && newer_input.play,
+      skip_back: !self.skip_back && newer_input.skip_back,
+      skip_forward: !self.skip_forward && newer_input.skip_forward,
+      pause_playback: !self.pause_playback && newer_input.pause_playback,
+    }
+  }
+}
+
 // A game from the perspective of a specific player
 pub struct GameAsPlayer {
   pub my_uuid: UUID,
   inputs: InputState,
   pub state: GameState,
   pub socket: Box<dyn GameTx>,
-}
-
-pub trait GameTx {
-  fn send(&self, message: &ClientToServerMessage) -> Result<(), String>;
+  pub contextual_state: ContextualState,
 }
 
 // A game from the perspective of a particular player.
@@ -36,6 +53,7 @@ impl GameAsPlayer {
     GameAsPlayer {
       state: GameState::new(),
       inputs: InputState::default(),
+      contextual_state: ContextualState::Blank,
       my_uuid: uuid,
       socket,
     }
@@ -56,6 +74,29 @@ impl GameAsPlayer {
 
   // Take the given inputs from the local player
   pub fn take_input(&mut self, new_input: InputState) -> Result<(), String> {
+    match &self.state.status {
+      GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.take_night_input(new_input),
+      GameStatus::Playing(PlayState::Day(day_state)) => {
+        let updated_voting_state = self.take_day_input(day_state, new_input)?;
+        if let Some(updated_voting_state) = updated_voting_state {
+          match &mut self.contextual_state {
+            ContextualState::Blank => return Err("Internal error, bad contextual state".into()),
+            ContextualState::Voting(voting) => {
+              *voting = updated_voting_state;
+            }
+          }
+        }
+        self.inputs = new_input;
+        Ok(())
+      }
+      GameStatus::Connecting | GameStatus::Won(_) | GameStatus::Disconnected => {
+        // Nothing to do
+        Ok(())
+      }
+    }
+  }
+
+  fn take_night_input(&mut self, new_input: InputState) -> Result<(), String> {
     let current_input = self.inputs;
     let player = match self.local_player_mut() {
       None => return Ok(()),
@@ -106,6 +147,144 @@ impl GameAsPlayer {
       }))?;
     }
     Ok(())
+  }
+
+  fn take_day_input(
+    &self,
+    day_state: &DayState,
+    new_input: InputState,
+  ) -> Result<Option<VotingUiState>, String> {
+    let pressed = self.inputs.get_new_presses(new_input);
+    let player = match self.local_player() {
+      None => {
+        // Spectators don't get a vote.
+        return Ok(None);
+      }
+      Some(p) => p,
+    };
+    if player.dead {
+      // The dead don't get a vote.
+      return Ok(None);
+    }
+    let has_voted = day_state.votes.contains_key(&player.uuid);
+    if has_voted {
+      // Nothing to do but wait if you've already voted.
+      return Ok(None);
+    }
+    let mut voting_state = match self.contextual_state {
+      ContextualState::Voting(voting) => voting,
+      ContextualState::Blank => {
+        return Err(
+          "Internal Error: expected to be in Voting contextual state during the day.".to_string(),
+        )
+      }
+    };
+
+    match voting_state.highlighted_player {
+      None => {
+        if pressed.up || pressed.down || pressed.left || pressed.right {
+          // Nothing was highlighted, so highlight the first non-dead player.
+          voting_state.highlighted_player = self
+            .state
+            .players
+            .iter()
+            .find(|(_uuid, player)| !player.dead)
+            .map(|(uuid, _player)| *uuid);
+        }
+      }
+      Some(highlighted) => {
+        let mut highlighted: PlayerInVotingTable = self
+          .state
+          .players
+          .iter()
+          .enumerate()
+          .find(|(_i, (u, _p))| **u == highlighted)
+          .map(|(i, (u, _p))| PlayerInVotingTable::new(i, *u))
+          .ok_or_else(|| "Internal Error: Highlighting a nonexistant player?".to_string())?;
+        let living_uuid_indexes: Vec<PlayerInVotingTable> = self
+          .state
+          .players
+          .iter()
+          .enumerate()
+          .filter(|(_i, (_u, p))| !p.dead)
+          .map(|(i, (u, _p))| PlayerInVotingTable::new(i, *u))
+          .collect();
+        if pressed.up {
+          let mut closest_same_column_above: Option<PlayerInVotingTable> = None;
+          let mut closest_above: Option<PlayerInVotingTable> = None;
+          for p in living_uuid_indexes.iter() {
+            if p.y >= highlighted.y {
+              break; // no longer above
+            }
+            if p.x == highlighted.x {
+              closest_same_column_above = Some(*p);
+            } else {
+              closest_above = Some(*p);
+            }
+          }
+          highlighted =
+            closest_same_column_above.unwrap_or_else(|| closest_above.unwrap_or(highlighted));
+        }
+        if pressed.down {
+          let mut closest_same_column_below: Option<PlayerInVotingTable> = None;
+          let mut closest_below: Option<PlayerInVotingTable> = None;
+          for p in living_uuid_indexes.iter() {
+            if p.y <= highlighted.y {
+              continue; // not below
+            }
+            if p.x == highlighted.x && closest_same_column_below.is_none() {
+              closest_same_column_below = Some(*p);
+            } else if closest_below.is_none() {
+              closest_below = Some(*p);
+            }
+          }
+          highlighted =
+            closest_same_column_below.unwrap_or_else(|| closest_below.unwrap_or(highlighted));
+        }
+        if pressed.left && highlighted.x == 1 {
+          let mut closest_left_column_above: Option<PlayerInVotingTable> = None;
+          let mut first_in_left_column: Option<PlayerInVotingTable> = None;
+          for p in living_uuid_indexes.iter() {
+            if p.x != 0 {
+              continue; // not in left column
+            }
+            if p.y <= highlighted.y {
+              closest_left_column_above = Some(*p);
+            } else if first_in_left_column.is_none() {
+              first_in_left_column = Some(*p);
+            }
+          }
+          highlighted = closest_left_column_above
+            .unwrap_or_else(|| first_in_left_column.unwrap_or(highlighted));
+        }
+        if pressed.right && highlighted.x == 0 {
+          let mut closest_right_column_above: Option<PlayerInVotingTable> = None;
+          let mut first_in_right_column: Option<PlayerInVotingTable> = None;
+          for p in living_uuid_indexes.iter() {
+            if p.x != 1 {
+              continue; // not in right column
+            }
+            if p.y <= highlighted.y {
+              closest_right_column_above = Some(*p);
+            } else if first_in_right_column.is_none() {
+              first_in_right_column = Some(*p);
+            }
+          }
+          highlighted = closest_right_column_above
+            .unwrap_or_else(|| first_in_right_column.unwrap_or(highlighted));
+        }
+        voting_state.highlighted_player = Some(highlighted.uuid);
+      }
+    }
+    if pressed.activate {
+      if let Some(target) = voting_state.highlighted_player {
+        self.socket.send(&ClientToServerMessage::Vote {
+          target: VoteTarget::Player { uuid: target },
+        })?;
+        voting_state.highlighted_player = None;
+      }
+    }
+    Ok(Some(voting_state))
   }
 
   fn get_speed(&self) -> Speed {
@@ -203,7 +382,7 @@ impl GameAsPlayer {
   pub fn disconnected(&mut self) -> Result<(), String> {
     match self.state.status {
       GameStatus::Won(_) => (), // do nothing, this is expected
-      _ => self.state.status = GameStatus::Disconnected,
+      _ => self.update_status(GameStatus::Disconnected),
     };
     Ok(())
   }
@@ -221,7 +400,7 @@ impl GameAsPlayer {
         bodies,
         players,
       }) => {
-        self.state.status = status;
+        self.update_status(status);
         self.state.bodies = bodies;
         // handle disconnections
         let server_uuids: BTreeSet<_> = players.iter().map(|p| p.uuid).collect();
@@ -274,5 +453,51 @@ impl GameAsPlayer {
   fn start(&mut self) -> Result<(), String> {
     self.socket.send(&ClientToServerMessage::StartGame())?;
     Ok(())
+  }
+
+  fn update_status(&mut self, new_status: GameStatus) {
+    if let GameStatus::Playing(PlayState::Day(_)) = new_status {
+      match self.contextual_state {
+        ContextualState::Voting(_) => (),
+        _ => self.contextual_state = ContextualState::Voting(VotingUiState::default()),
+      }
+    } else {
+      match self.contextual_state {
+        ContextualState::Blank => (),
+        _ => self.contextual_state = ContextualState::Blank,
+      }
+    }
+    self.state.status = new_status;
+  }
+}
+
+// This is terrible design lol. Integrate with game.status maybe?
+pub enum ContextualState {
+  Blank,
+  Voting(VotingUiState),
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct VotingUiState {
+  pub highlighted_player: Option<UUID>,
+}
+
+pub trait GameTx {
+  fn send(&self, message: &ClientToServerMessage) -> Result<(), String>;
+}
+
+#[derive(Clone, Copy)]
+struct PlayerInVotingTable {
+  x: usize,
+  y: usize,
+  uuid: UUID,
+}
+impl PlayerInVotingTable {
+  fn new(index: usize, uuid: UUID) -> Self {
+    Self {
+      x: index % 2,
+      y: index / 2,
+      uuid,
+    }
   }
 }

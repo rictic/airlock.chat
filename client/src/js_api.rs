@@ -125,11 +125,7 @@ impl GameWrapper {
   }
 
   pub fn draw(&mut self) -> Result<(), JsValue> {
-    console_log!("drawing");
-    self
-      .canvas
-      .draw(self.game.clone())
-      .map_err(|e| JsValue::from(format!("Error drawing: {}", e)))
+    self.canvas.draw(self.game.clone())
   }
 
   pub fn get_status(&self) -> String {
@@ -173,7 +169,7 @@ impl GameWrapper {
         }
       }
       GameStatus::Won(team) => format!("{:?} win!", team),
-      GameStatus::Playing(_) => {
+      GameStatus::Playing(PlayState::Night) => {
         if let Some(local_player) = local_player {
           if local_player.dead {
             if local_player.impostor {
@@ -189,6 +185,9 @@ impl GameWrapper {
         } else {
           "The game has begun! You're spectating.".to_string()
         }
+      }
+      GameStatus::Playing(PlayState::Day(_)) => {
+        "Emergency meeting called! Voting isn't implemented yet though...".to_string()
       }
     }
   }

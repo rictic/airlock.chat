@@ -176,6 +176,7 @@ impl GameServer {
           votes: BTreeMap::new(),
           time_remaining: self.state.settings.voting_time,
         }));
+        self.broadcast_snapshot()?;
       }
       ClientToServerMessage::FinishedTask(finished) => {
         self.state.note_finished_task(sender, *finished)?;
@@ -263,12 +264,15 @@ impl GameServer {
           // In all other cases, they're joining as a spectator.
         }
 
+        console_log!("Player joined? Sending welcome to player");
         self.broadcaster.send_to_player(
           &sender,
           &ServerToClientMessage::Welcome {
             connection_id: sender,
           },
         )?;
+        console_log!("Player joined? Sending out snapshot");
+
         // Send out a snapshot to catch the new client up, whether or not they're playing.
         self.broadcast_snapshot()?;
         return Ok(decision);
@@ -284,6 +288,7 @@ impl GameServer {
             o.insert(*target);
           }
         }
+        self.broadcast_snapshot()?;
       }
     };
     Ok(None)

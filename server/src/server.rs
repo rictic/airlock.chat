@@ -4,7 +4,6 @@ use std::time::Duration;
 use std::time::Instant;
 use std::{
   collections::HashMap,
-  net::SocketAddr,
   sync::{Arc, Mutex},
 };
 use tokio::time::delay_for;
@@ -73,7 +72,7 @@ impl Server {
 
   pub async fn serve(&mut self) {
     // Let's spawn the handling of each connection in a separate task.
-    while let Ok((stream, addr)) = self.listener.accept().await {
+    while let Ok((stream, _addr)) = self.listener.accept().await {
       let prev_game_finished;
       {
         let game_server = self.game_server.lock().unwrap();
@@ -91,7 +90,6 @@ impl Server {
         self.game_server.clone(),
         self.room.clone(),
         stream,
-        addr,
       ));
     }
   }
@@ -119,12 +117,7 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>, room: Room) {
   }
 }
 
-async fn handle_connection(
-  game_server: Arc<Mutex<GameServer>>,
-  room: Room,
-  raw_stream: TcpStream,
-  addr: SocketAddr,
-) {
+async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, raw_stream: TcpStream) {
   let mut ws_stream = match tokio_tungstenite::accept_async(raw_stream).await {
     Ok(val) => val,
     Err(e) => {
@@ -132,7 +125,7 @@ async fn handle_connection(
       return;
     }
   };
-  println!("WebSocket connection established: {}", addr);
+  println!("WebSocket connection established");
 
   // Insert the write part of this peer to the peer map.
   let (tx, rx) = unbounded();
@@ -195,7 +188,7 @@ async fn handle_connection(
     };
     println!(
       "Received a message from {}: {:?}",
-      addr,
+      uuid,
       msg.to_text().unwrap()
     );
     let message: ClientToServerMessage = match serde_json::from_str(&message_text) {
@@ -221,7 +214,7 @@ async fn handle_connection(
   pin_mut!(broadcast_incoming, receive_from_others);
   future::select(broadcast_incoming, receive_from_others).await;
 
-  println!("{} disconnected", &addr);
+  println!("{} disconnected", uuid);
   room.lock().unwrap().remove(&uuid);
 
   let mut game_server = game_server.lock().unwrap();

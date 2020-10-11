@@ -1,6 +1,7 @@
+use std::error::Error;
+use std::fmt::Display;
 use std::{
     collections::HashMap,
-    io::Error as IoError,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
@@ -11,12 +12,82 @@ use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
 
+use rust_us_core::*;
+
 type Tx = UnboundedSender<Message>;
-type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
+type Room = Arc<Mutex<HashMap<UUID, Tx>>>;
 
-async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: SocketAddr) {
-    println!("Incoming TCP connection from: {}", addr);
+struct Server {
+    listener: TcpListener,
+    room: Room,
+    game_server: Arc<Mutex<GameServer>>,
+}
 
+struct BroadCastServer {
+    room: Room,
+}
+
+impl Broadcaster for BroadCastServer {
+    fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
+        println!("Broadcasting {:?}", message);
+        broadcast(
+            self.room.clone(),
+            &Message::Text(serde_json::to_string(message)?),
+        )?;
+        Ok(())
+    }
+
+    fn send_to_player(
+        &self,
+        uuid: &UUID,
+        message: &ServerToClientMessage,
+    ) -> Result<(), Box<dyn Error>> {
+        let room = self.room.clone();
+        let peers = room.lock().unwrap();
+        let player_connection = match peers.get(uuid) {
+            None => return Err(format!("No player connection with UUID {:?}", uuid).into()),
+            Some(p) => p,
+        };
+        println!("Sending {:?} to {:?}", message, uuid);
+        player_connection.unbounded_send(Message::Text(serde_json::to_string(message)?))?;
+        Ok(())
+    }
+}
+
+impl Server {
+    async fn new<A: tokio::net::ToSocketAddrs + Display>(
+        addr: A,
+    ) -> Result<Server, Box<dyn Error>> {
+        let listener = TcpListener::bind(&addr).await?;
+        println!("Listening on: {}", addr);
+        let room = Room::default();
+        let broadcast_server = BroadCastServer { room: room.clone() };
+        Ok(Server {
+            listener,
+            room,
+            game_server: Arc::new(Mutex::new(GameServer::new(Box::new(broadcast_server)))),
+        })
+    }
+
+    async fn serve(&mut self) {
+        // Let's spawn the handling of each connection in a separate task.
+        while let Ok((stream, addr)) = self.listener.accept().await {
+            tokio::spawn(handle_connection(
+                self.game_server.clone(),
+                self.room.clone(),
+                stream,
+                addr,
+            ));
+        }
+    }
+}
+
+async fn handle_connection(
+    game_server: Arc<Mutex<GameServer>>,
+    room: Room,
+    raw_stream: TcpStream,
+    addr: SocketAddr,
+) {
     let mut ws_stream = match tokio_tungstenite::accept_async(raw_stream).await {
         Ok(val) => val,
         Err(e) => {
@@ -28,24 +99,39 @@ async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: Socke
 
     // Insert the write part of this peer to the peer map.
     let (tx, rx) = unbounded();
-    peer_map.lock().unwrap().insert(addr, tx);
 
-    let uuid: rust_us_core::UUID;
-    if let Some(Ok(Message::Text(join_text))) = ws_stream.next().await {
-        let message: rust_us_core::Message = match serde_json::from_str(&join_text) {
+    let uuid: UUID;
+    println!("Waiting on initial message...");
+    let message = ws_stream.next().await;
+    println!("Received initial message...");
+    if let Some(Ok(Message::Text(join_text))) = message {
+        println!("Got initial message: {}", join_text);
+        let message: ClientToServerMessage = match serde_json::from_str(&join_text) {
             Ok(m) => m,
             Err(e) => {
                 println!("Unable to deserialize {:?} – {:?}", join_text, e);
                 return;
             }
         };
-        if let rust_us_core::Message::Join(player) = message {
+        if let ClientToServerMessage::Join(player) = message {
             uuid = player.uuid;
+            room.lock().unwrap().insert(uuid, tx);
+            let mut game_server = game_server.lock().unwrap();
+            match game_server.handle_message(uuid, ClientToServerMessage::Join(player)) {
+                Ok(_) => (),
+                Err(e) => {
+                    println!("Failed to handle message from {:?}: {}", uuid, e);
+                    return;
+                }
+            }
         } else {
             return;
         }
-        rebroadcast(peer_map.clone(), &Message::Text(join_text), addr);
     } else {
+        println!(
+            "Client didn't introduce themselves properly, hanging up. Bad message: {:?}",
+            message
+        );
         // Client didn't introduce themselves properly, hang up.
         return;
     }
@@ -53,22 +139,35 @@ async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: Socke
     let (outgoing, incoming) = ws_stream.split();
 
     let broadcast_incoming = incoming.try_for_each(|msg| {
-        match &msg {
+        let message_text = match &msg {
             // Ignore these
             Message::Close(_) => return future::ok(()),
             Message::Ping(_) => return future::ok(()),
             Message::Pong(_) => return future::ok(()),
-            // Forward these
-            Message::Text(_) => (),
-            Message::Binary(_) => (),
-        }
+            Message::Binary(_) => return future::ok(()),
+            // read this one
+            Message::Text(t) => t,
+        };
         println!(
             "Received a message from {}: {:?}",
             addr,
             msg.to_text().unwrap()
         );
-        rebroadcast(peer_map.clone(), &msg, addr);
-
+        let message: ClientToServerMessage = match serde_json::from_str(&message_text) {
+            Ok(m) => m,
+            Err(e) => {
+                println!("Unable to deserialize {:?} – {:?}", message_text, e);
+                return future::ok(());
+            }
+        };
+        let mut game_server = game_server.lock().unwrap();
+        match game_server.handle_message(uuid, message) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Failed to handle message from {:?}: {}", uuid, e);
+                return future::ok(());
+            }
+        }
         future::ok(())
     });
 
@@ -78,46 +177,29 @@ async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: Socke
     future::select(broadcast_incoming, receive_from_others).await;
 
     println!("{} disconnected", &addr);
-    peer_map.lock().unwrap().remove(&addr);
+    room.lock().unwrap().remove(&uuid);
 
-    if let Ok(encoded_disconnect_message) = serde_json::to_string(
-        &rust_us_core::Message::Disconnected(rust_us_core::Disconnected { uuid }),
-    ) {
-        rebroadcast(
-            peer_map.clone(),
-            &Message::Text(encoded_disconnect_message),
-            addr,
-        );
+    let mut game_server = game_server.lock().unwrap();
+    match game_server.disconnected(uuid) {
+        Ok(()) => (),
+        Err(e) => println!("Error handling disconnection: {}", e),
     }
 }
 
-fn rebroadcast(peer_map: PeerMap, msg: &Message, sender: SocketAddr) {
-    let peers = peer_map.lock().unwrap();
-
-    // We want to broadcast the message to everyone except ourselves.
-    let broadcast_recipients = peers.iter().filter(|(peer_addr, _)| peer_addr != &&sender);
-
-    for (recp_addr, recp) in broadcast_recipients {
-        if let Err(e) = recp.unbounded_send(msg.clone()) {
-            println!("Error sending from {} to {}: {}", sender, recp_addr, e);
-        }
+fn broadcast(room: Room, msg: &Message) -> Result<(), Box<dyn Error>> {
+    let peers = room.lock().unwrap();
+    for (_, recp) in peers.iter() {
+        recp.unbounded_send(msg.clone())?;
     }
+    Ok(())
 }
 
 #[tokio::main]
-async fn main() -> Result<(), IoError> {
-    let state = PeerMap::new(Mutex::new(HashMap::new()));
-
-    // Create the event loop and TCP listener we'll accept connections on.
+async fn main() -> Result<(), Box<dyn Error>> {
     let addr = "127.0.0.1:3012".to_string();
-    let try_socket = TcpListener::bind(&addr).await;
-    let mut listener = try_socket.expect("Failed to bind");
+    let mut server = Server::new(addr.clone()).await?;
     println!("Listening on: {}", addr);
-
-    // Let's spawn the handling of each connection in a separate task.
-    while let Ok((stream, addr)) = listener.accept().await {
-        tokio::spawn(handle_connection(state.clone(), stream, addr));
-    }
+    server.serve().await;
 
     Ok(())
 }

@@ -5,6 +5,7 @@ use futures::join;
 use std::error::Error;
 use std::net::SocketAddr;
 use std::path::Path;
+use warp::Filter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -40,7 +41,10 @@ pub async fn serve_static_files(
   addr: SocketAddr,
   path: &'static str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-  let server = warp::serve(warp::fs::dir(path)).run(addr);
+  // TODO when I'm smarter, figure out to compress with the best available
+  // compression algorithm.
+  let fileserver = warp::fs::dir(path).with(warp::compression::gzip());
+  let server = warp::serve(fileserver).run(addr);
   println!("Listening for static file traffic on http://{}", addr);
   server.await;
 

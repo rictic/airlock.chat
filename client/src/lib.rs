@@ -27,23 +27,82 @@ extern "C" {
 struct Canvas {
     width: f64,
     height: f64,
+    camera: Camera,
     context: web_sys::CanvasRenderingContext2d,
+    canvas_element: web_sys::HtmlCanvasElement,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Camera {
+    zoom: f64,
+    left: f64,
+    right: f64,
+    top: f64,
+    bottom: f64,
+}
+impl Camera {
+    fn offset(self, x: f64, y: f64) -> (f64, f64) {
+        let x = (x - self.left) * self.zoom;
+        let y = (y - self.top) * self.zoom;
+        (x, y)
+    }
+}
 impl Canvas {
-    fn draw(&self, game: &GameAsPlayer) -> Result<(), JsValue> {
-        self.draw_internal(game)
-            .map_err(|e| JsValue::from(format!("Error: {}", e)))
+    fn set_dimensions(&mut self) -> Result<(), JsValue> {
+        let window = web_sys::window().ok_or("Could not get window")?;
+        let ratio = window.device_pixel_ratio();
+        let width: f64 = window.inner_width()?.as_f64().unwrap();
+        let height = window.inner_height()?.as_f64().unwrap();
+        self.canvas_element
+            .set_width((width * ratio).floor() as u32);
+        self.canvas_element
+            .set_height((height * ratio).floor() as u32);
+        self.context.scale(ratio, ratio)?;
+        self.width = width;
+        self.height = height;
+        Ok(())
     }
 
-    fn draw_internal(&self, game: &GameAsPlayer) -> Result<(), Box<dyn Error>> {
+    // Draws the current game state.
+    fn draw(&mut self, game: Arc<Mutex<GameAsPlayer>>) -> Result<(), Box<dyn Error>> {
+        self.set_dimensions().map_err(|e| format!("{:?}", e))?;
+        let game = game.lock().unwrap();
         let context = &self.context;
+        // Frame the canvas.
         context.clear_rect(0.0, 0.0, self.width, self.height);
         context.begin_path();
         context.rect(0.0, 0.0, self.width, self.height);
         context.set_fill_style(&JsValue::from_str("#f3f3f3"));
         context.fill();
-        context.stroke();
+
+        // Move the
+        self.camera = match game.local_player() {
+            None => {
+                // the spectator sees all
+                Camera {
+                    zoom: 1.0,
+                    left: 0.0,
+                    top: 0.0,
+                    right: self.width,
+                    bottom: self.height,
+                }
+            }
+            Some(p) => {
+                let zoom = 2.0;
+                let map_width = self.width / zoom;
+                let map_height = self.height / zoom;
+                // Players see the area around them
+                Camera {
+                    zoom,
+                    left: p.position.x - (map_width / 2.0),
+                    right: p.position.x + (map_width / 2.0),
+                    top: p.position.y - (map_height / 2.0),
+                    bottom: p.position.y + (map_height / 2.0),
+                }
+            }
+        };
+
+        self.context.set_line_width(self.camera.zoom);
 
         // Draw the conference table
         context.set_stroke_style(&JsValue::from_str("#000000"));
@@ -83,17 +142,15 @@ impl Canvas {
     fn draw_player(&self, player: &Player) -> Result<(), &'static str> {
         self.context.begin_path();
         let radius = 10.0;
-        self.context
-            .move_to(player.position.x + radius, player.position.y);
-        self.context
-            .arc(
-                player.position.x,
-                player.position.y,
-                radius,
-                0.0,
-                f64::consts::PI * 2.0,
-            )
-            .map_err(|_| "Failed to draw a circle.")?;
+        self.move_to(player.position.x + radius, player.position.y);
+        self.arc(
+            player.position.x,
+            player.position.y,
+            radius,
+            0.0,
+            f64::consts::PI * 2.0,
+        )
+        .map_err(|_| "Failed to draw a circle.")?;
         let color = if player.dead {
             JsValue::from(format!("{}88", player.color.to_str()))
         } else {
@@ -114,17 +171,15 @@ impl Canvas {
     fn draw_body(&self, body: DeadBody) -> Result<(), &'static str> {
         self.context.begin_path();
         let radius = 10.0;
-        self.context
-            .move_to(body.position.x + radius, body.position.y);
-        self.context
-            .arc(
-                body.position.x,
-                body.position.y,
-                radius,
-                0.0,
-                f64::consts::PI * 1.0,
-            )
-            .map_err(|_| "Failed to draw a circle.")?;
+        self.move_to(body.position.x + radius, body.position.y);
+        self.arc(
+            body.position.x,
+            body.position.y,
+            radius,
+            0.0,
+            f64::consts::PI * 1.0,
+        )
+        .map_err(|_| "Failed to draw a circle.")?;
         self.context
             .set_fill_style(&JsValue::from_str(body.color.to_str()));
         self.context.set_stroke_style(&JsValue::from("#000000"));
@@ -139,10 +194,10 @@ impl Canvas {
         let pos = task.position;
         // drawing an equilateral triangle...
         let height = (len.powf(2.0) - (len / 2.0).powf(2.0)).sqrt();
-        self.context.move_to(pos.x + (len / 2.0), pos.y);
-        self.context.line_to(pos.x, pos.y + height);
-        self.context.line_to(pos.x + len, pos.y + height);
-        self.context.line_to(pos.x + (len / 2.0), pos.y);
+        self.move_to(pos.x + (len / 2.0), pos.y);
+        self.line_to(pos.x, pos.y + height);
+        self.line_to(pos.x + len, pos.y + height);
+        self.line_to(pos.x + (len / 2.0), pos.y);
         if fake {
             self.context.set_fill_style(&JsValue::from("#ffa50244"));
             self.context.set_stroke_style(&JsValue::from("#00000044"));
@@ -152,23 +207,48 @@ impl Canvas {
         }
         self.context.fill();
         self.context.stroke();
-        self.context.move_to(pos.x + (len / 2.0), pos.y + 3.0);
-        self.context.line_to(pos.x + (len / 2.0), pos.y + 9.0);
-        self.context.move_to(pos.x + (len / 2.0), pos.y + 10.0);
-        self.context.line_to(pos.x + (len / 2.0), pos.y + 12.0);
+        self.move_to(pos.x + (len / 2.0), pos.y + 3.0);
+        self.line_to(pos.x + (len / 2.0), pos.y + 9.0);
+        self.move_to(pos.x + (len / 2.0), pos.y + 10.0);
+        self.line_to(pos.x + (len / 2.0), pos.y + 12.0);
         self.context.stroke();
         Ok(())
     }
 
     fn circle(&self, x: f64, y: f64, radius: f64) -> Result<(), &'static str> {
         self.context.begin_path();
-        self.context.move_to(x + radius, y);
-        self.context
-            .arc(x, y, radius, 0.0, f64::consts::PI * 2.0)
+        self.move_to(x + radius, y);
+        self.arc(x, y, radius, 0.0, f64::consts::PI * 2.0)
             .map_err(|_| "Failed to draw a circle.")?;
         self.context.stroke();
         self.context.fill();
         Ok(())
+    }
+
+    // Like context.move_to but corrects for the window
+    fn move_to(&self, x: f64, y: f64) {
+        let (x, y) = self.camera.offset(x, y);
+        self.context.move_to(x, y);
+    }
+
+    fn line_to(&self, x: f64, y: f64) {
+        let (x, y) = self.camera.offset(x, y);
+        self.context.line_to(x, y);
+    }
+
+    fn arc(
+        &self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        start_angle: f64,
+        end_angle: f64,
+    ) -> Result<(), &'static str> {
+        let (x, y) = self.camera.offset(x, y);
+        let radius = radius * self.camera.zoom;
+        self.context
+            .arc(x, y, radius, start_angle, end_angle)
+            .map_err(|_| "Failed to draw a circle.")
     }
 }
 
@@ -189,7 +269,13 @@ impl GameTx for WebSocketTx {
     }
 }
 
-fn get_canvas_info() -> Result<web_sys::CanvasRenderingContext2d, Box<dyn Error>> {
+fn get_canvas_info() -> Result<
+    (
+        web_sys::HtmlCanvasElement,
+        web_sys::CanvasRenderingContext2d,
+    ),
+    Box<dyn Error>,
+> {
     let document = web_sys::window()
         .ok_or("Could not get window")?
         .document()
@@ -208,17 +294,13 @@ fn get_canvas_info() -> Result<web_sys::CanvasRenderingContext2d, Box<dyn Error>
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .map_err(|_| "Returned value was not a CanvasRenderingContext2d")?;
 
-    Ok(context)
+    Ok((canvas, context))
 }
 
 #[wasm_bindgen]
 pub struct GameWrapper {
-    environment: Arc<Mutex<GameEnvironment>>,
-}
-
-struct GameEnvironment {
-    game: GameAsPlayer,
     canvas: Canvas,
+    game: Arc<Mutex<GameAsPlayer>>,
 }
 
 #[wasm_bindgen]
@@ -235,53 +317,45 @@ impl GameWrapper {
         activate: bool,
         play: bool,
     ) -> Result<(), JsValue> {
-        let mut environment = self
-            .environment
+        let mut game = self
+            .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if environment.game.state.status.finished() {
+        if game.state.status.finished() {
             return Ok(());
         }
-        environment
-            .game
-            .take_input(InputState {
-                up,
-                down,
-                left,
-                right,
-                kill,
-                report,
-                activate,
-                play,
-            })
-            .map_err(JsValue::from)
+        game.take_input(InputState {
+            up,
+            down,
+            left,
+            right,
+            kill,
+            report,
+            activate,
+            play,
+        })
+        .map_err(JsValue::from)
     }
 
     pub fn simulate(&mut self, elapsed: f64) -> Result<bool, JsValue> {
-        let mut environment = self
-            .environment
+        let mut game = self
+            .game
             .lock()
             .expect("Internal Error: could not get a lock on the game");
-        if environment.game.state.status == GameStatus::Connecting {
+        if game.state.status == GameStatus::Connecting {
             return Ok(false);
         }
-        Ok(environment.game.state.simulate(elapsed))
+        Ok(game.state.simulate(elapsed))
     }
 
     pub fn draw(&mut self) -> Result<(), JsValue> {
-        let environment = self
-            .environment
-            .lock()
-            .expect("Internal Error: could not get a lock on the game");
-        if environment.game.state.status == GameStatus::Connecting {
-            return Ok(());
-        }
-        environment.canvas.draw(&environment.game)
+        self.canvas
+            .draw(self.game.clone())
+            .map_err(|e| JsValue::from(format!("Error drawing: {}", e)))
     }
 
     pub fn get_status(&self) -> String {
-        let environment = self.environment.lock().unwrap();
-        let game = &environment.game;
+        let game = self.game.lock().unwrap();
         let local_player = game.local_player();
         match game.state.status {
             GameStatus::Connecting => "Conecting to game...".to_string(),
@@ -320,7 +394,7 @@ impl GameWrapper {
 #[wasm_bindgen]
 pub fn make_game() -> Result<GameWrapper, JsValue> {
     utils::set_panic_hook();
-    let context = get_canvas_info()
+    let (canvas, context) = get_canvas_info()
         .map_err(|e| JsValue::from(format!("Error initializing canvas: {}", e)))?;
     let hostname = web_sys::window()
         .ok_or("no window")?
@@ -336,8 +410,7 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
     // Once we hand the WebSocket to the Game then it owns it, so we have to do our websocket setup
     // before creating the game, but we need to access the game inside the callbacks...
     // So here we are.
-    let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameEnvironment>>>>> =
-        Arc::new(Mutex::new(None));
+    let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>> = Arc::new(Mutex::new(None));
 
     {
         let wrapper_wrapper_clone = wrapper_wrapper.clone();
@@ -352,11 +425,10 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
                         return;
                     }
                 };
-                console_log!("message from network: {:?}", message);
                 let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
                 let wrapper = option_wrapped.as_ref().unwrap();
-                let mut environment = wrapper.lock().unwrap();
-                match environment.game.handle_msg(message) {
+                let mut game = wrapper.lock().unwrap();
+                match game.handle_msg(message) {
                     Ok(()) => (),
                     Err(e) => {
                         console_log!("Error handling message {:?} – {:?}", strng, e);
@@ -382,10 +454,8 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             console_log!("websocket closed");
             let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
             let wrapper = option_wrapped.as_ref().unwrap();
-            let mut environment = wrapper.lock().unwrap();
-            environment
-                .game
-                .disconnected()
+            let mut game = wrapper.lock().unwrap();
+            game.disconnected()
                 .expect("Game failed to handle disconnection");
         }) as Box<dyn FnMut(ErrorEvent)>);
         ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
@@ -397,29 +467,34 @@ pub fn make_game() -> Result<GameWrapper, JsValue> {
             console_log!("socket opened");
             let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
             let wrapper = &option_wrapped.as_ref().unwrap();
-            let mut environment = wrapper.lock().unwrap();
-            environment
-                .game
-                .connected()
-                .expect("Could not handle game.connected()");
+            let mut game = wrapper.lock().unwrap();
+            game.connected().expect("Could not handle game.connected()");
         }) as Box<dyn FnMut(JsValue)>);
         ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
     }
 
     let wrapper = GameWrapper {
-        environment: Arc::new(Mutex::new(GameEnvironment {
-            game: GameAsPlayer::new(Box::new(WebSocketTx { socket: ws })),
-            canvas: Canvas {
-                context,
-                width: WIDTH,
-                height: HEIGHT,
+        canvas: Canvas {
+            context,
+            canvas_element: canvas,
+            camera: Camera {
+                top: 0.0,
+                left: 0.0,
+                bottom: HEIGHT,
+                right: WIDTH,
+                zoom: 1.0,
             },
-        })),
+            width: WIDTH,
+            height: HEIGHT,
+        },
+        game: Arc::new(Mutex::new(GameAsPlayer::new(Box::new(WebSocketTx {
+            socket: ws,
+        })))),
     };
     {
         let mut wrapped = wrapper_wrapper.lock().unwrap();
-        *wrapped = Some(wrapper.environment.clone());
+        *wrapped = Some(wrapper.game.clone());
     }
     Ok(wrapper)
 }

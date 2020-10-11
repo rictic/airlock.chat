@@ -15,7 +15,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let path = Arc::new(Path::new("./dist"));
+  let path = Arc::new(Path::new("./server/dist"));
   if !path.exists() {
     return Err(
       r"Web directory isn't built. Be sure to do (cd www && npm run build) first.

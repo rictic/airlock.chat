@@ -11,3 +11,4 @@ wasm-pack.log
 /server/dist/
 
 /core/target/
+/target/

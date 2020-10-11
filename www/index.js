@@ -1,4 +1,4 @@
-import * as wasm from '../client/pkg/rust_us';
+import * as wasm from '../client/pkg/client';
 
 async function getName() {
   const input = document.createElement('input');

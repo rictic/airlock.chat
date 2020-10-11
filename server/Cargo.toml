@@ -9,13 +9,23 @@ edition = "2018"
 [dependencies]
 tungstenite = "0.11.1"
 tokio-tungstenite = "0.11.0"
-tokio = { version = "0.2", default-features = false, features = ["io-std", "macros", "stream", "time"] }
+tokio = { version = "0.2", default-features = false, features = ["io-std", "macros", "stream", "time", "fs"] }
 futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"] }
 futures-channel = "0.3"
 futures = "0.3"
 url = "2.0.0"
 env_logger = "0.7"
 serde_json = "1.0.57"
+hyper = "0.13.8"
+tokio-util = "0.3.1"
 
 [dependencies.rust_us_core]
 path = "../core"
+
+[[bin]]
+name = "dev"
+path = "src/dev.rs"
+
+[[bin]]
+name = "prod"
+path = "src/prod.rs"

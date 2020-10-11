@@ -5,7 +5,7 @@
 1. [install the rust toolchain](https://www.rust-lang.org/tools/install)
 2. [install npm](https://www.npmjs.com/get-npm)
 3. [install wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
-4. install some dev dependencies `apt-get install gcc libssl-dev`
+4. install some dev dependencies `apt-get install gcc libssl-dev pkg-config`
 5. clone this repo
 6. cd rust-us
 7. ./start.sh

@@ -58,6 +58,7 @@ features = [
   'ErrorEvent',
   'FileReader',
   'HtmlCanvasElement',
+  'Location',
   'MessageEvent',
   'ProgressEvent',
   'WebSocket',

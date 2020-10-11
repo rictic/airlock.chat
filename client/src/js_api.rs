@@ -1,12 +1,10 @@
 use crate::canvas::*;
-use crate::network::wire_up_websocket;
-use crate::network::WebSocketTx;
+use crate::network::create_websocket_and_listen;
 use rust_us_core::*;
 use std::f64;
 use std::sync::Arc;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
-use web_sys::WebSocket;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -115,12 +113,6 @@ impl GameWrapper {
 #[wasm_bindgen]
 pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
-  let hostname = web_sys::window()
-    .ok_or("no window")?
-    .location()
-    .hostname()?;
-  let ws = WebSocket::new(&format!("ws://{}:3012", hostname))?;
-
   // Ok, this is pretty crazy, but I can explain.
   // We need to set up the websocket callbacks using wasm_bindgen for the initial connection,
   // and handling messages, and disconnecting.
@@ -137,14 +129,10 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
     name,
     preferred_color: Color::random(),
   };
-  wire_up_websocket(wrapper_wrapper.clone(), &ws, join);
-
+  let game_tx = create_websocket_and_listen(wrapper_wrapper.clone(), join)?;
   let wrapper = GameWrapper {
     canvas: Canvas::find_in_document()?,
-    game: Arc::new(Mutex::new(GameAsPlayer::new(
-      my_uuid,
-      Box::new(WebSocketTx::new(ws)),
-    ))),
+    game: Arc::new(Mutex::new(GameAsPlayer::new(my_uuid, game_tx))),
   };
   {
     let mut wrapped = wrapper_wrapper.lock().unwrap();

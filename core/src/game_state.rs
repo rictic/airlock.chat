@@ -7,7 +7,7 @@ use std::fmt::Display;
 
 // The full game state
 #[derive(PartialEq, Clone, Debug)]
-pub struct Game {
+pub struct GameState {
   pub status: GameStatus,
   pub speed: f64,
   pub kill_distance: f64,
@@ -16,15 +16,15 @@ pub struct Game {
   pub bodies: Vec<DeadBody>,
 }
 
-impl Default for game_state::Game {
+impl Default for GameState {
   fn default() -> Self {
     Self::new()
   }
 }
 
-impl Game {
-  pub fn new() -> Game {
-    Game {
+impl GameState {
+  pub fn new() -> Self {
+    GameState {
       status: GameStatus::Connecting,
       speed: 2.0,
       task_distance: 32.0,

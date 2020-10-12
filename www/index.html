@@ -3,7 +3,9 @@
 
 <head>
   <meta charset="utf-8">
-  <title>rust-us</title>
+  <title>Airlock.chat</title>
+  <link rel="manifest" href="/pwa_manifest.json">
+  <link rel="icon" type="image/png" href="/icons/icon.png">
   <style>
     html,
     body {
@@ -23,6 +25,13 @@
   <noscript>This page contains webassembly and javascript content, please
     enable javascript in your browser.</noscript>
   <script src="./bootstrap.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/serviceworker.js')
+        .then(function () { console.log("Service Worker Registered"); });
+    }
+  </script>
 </body>
 
 </html>

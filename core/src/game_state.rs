@@ -52,10 +52,10 @@ impl GameState {
   pub fn simulate(&mut self, elapsed: f64) -> bool {
     self.status.progress_time(elapsed);
     match &self.status {
-      GameStatus::Lobby | GameStatus::Playing(PlayState::Day) => self.simulate_day(elapsed),
-      GameStatus::Playing(PlayState::Night(night_state)) => {
-        if self.is_night_over(night_state) {
-          match night_state.determine_winner_of_election() {
+      GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.simulate_day(elapsed),
+      GameStatus::Playing(PlayState::Day(day_state)) => {
+        if self.is_day_over(day_state) {
+          match day_state.determine_winner_of_election() {
             VoteTarget::Skip => { /* The crew have chosen a strange mercy */ }
             VoteTarget::Player { uuid } => {
               // Kill the lucky winner!
@@ -64,8 +64,8 @@ impl GameState {
               }
             }
           }
-          // Now it's day
-          self.status = GameStatus::Playing(PlayState::Day);
+          // Now it's night!
+          self.status = GameStatus::Playing(PlayState::Night);
         }
       }
       GameStatus::Connecting | GameStatus::Disconnected | GameStatus::Won(_) => {
@@ -76,9 +76,9 @@ impl GameState {
     self.status.finished()
   }
 
-  fn is_night_over(&self, night_state: &NightState) -> bool {
-    // Night can end after a timer.
-    if night_state.time_remaining <= Duration::from_secs(0) {
+  fn is_day_over(&self, day_state: &DayState) -> bool {
+    // Day can end after a timer.
+    if day_state.time_remaining <= Duration::from_secs(0) {
       return true;
     }
     // Or after all eligable players have recorded a vote.
@@ -86,7 +86,7 @@ impl GameState {
       .players
       .iter()
       .filter(|(_, p)| p.eligable_to_vote())
-      .all(|(uuid, _)| night_state.votes.contains_key(uuid))
+      .all(|(uuid, _)| day_state.votes.contains_key(uuid))
   }
 
   fn simulate_day(&mut self, elapsed: f64) {
@@ -118,7 +118,7 @@ impl GameState {
         self.status
       ));
     }
-    self.status = GameStatus::Playing(PlayState::Day);
+    self.status = GameStatus::Playing(PlayState::Night);
     let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
     for (i, (_, player)) in self.players.iter_mut().enumerate() {
       if i == impostor_index {
@@ -201,9 +201,9 @@ impl GameState {
     self.check_for_impostor_win();
     // We might be voting, in which case we want to remove all votes for the
     // disconnected player, so that players can vote for someone else if they wish.
-    if let GameStatus::Playing(PlayState::Night(night)) = &mut self.status {
+    if let GameStatus::Playing(PlayState::Day(day)) = &mut self.status {
       let mut voters_for_disonnected = Vec::new();
-      for (voter, target) in night.votes.iter_mut() {
+      for (voter, target) in day.votes.iter_mut() {
         if let VoteTarget::Player { uuid } = target {
           if *uuid == disconnected_player {
             voters_for_disonnected.push(*voter);
@@ -211,7 +211,7 @@ impl GameState {
         }
       }
       for voter in voters_for_disonnected {
-        night.votes.remove(&voter);
+        day.votes.remove(&voter);
       }
     }
   }
@@ -381,25 +381,25 @@ pub enum GameStatus {
 
 impl GameStatus {
   pub fn progress_time(&mut self, elapsed: f64) {
-    if let GameStatus::Playing(PlayState::Night(night_state)) = self {
-      night_state.time_remaining -= Duration::from_nanos((elapsed * 1000.0 * 1000.0) as u64);
+    if let GameStatus::Playing(PlayState::Day(day_state)) = self {
+      day_state.time_remaining -= Duration::from_nanos((elapsed * 1000.0 * 1000.0) as u64);
     }
   }
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum PlayState {
-  Day,
-  Night(NightState),
+  Night,
+  Day(DayState),
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct NightState {
+pub struct DayState {
   pub votes: BTreeMap<UUID, VoteTarget>,
   pub time_remaining: Duration,
 }
 
-impl NightState {
+impl DayState {
   pub fn determine_winner_of_election(&self) -> VoteTarget {
     // Count the votes by the target.
     let mut vote_count: BTreeMap<VoteTarget, u16> = BTreeMap::new();
@@ -413,7 +413,7 @@ impl NightState {
       if let Some((_runner_up, runner_up_votes)) = targets_and_votes.get(1) {
         if runner_up_votes == winner_votes {
           // In case of a tie, skip
-          return VoteTarget::Skip
+          return VoteTarget::Skip;
         }
       }
       return **winner;

@@ -117,15 +117,14 @@ impl GameServer {
         if !(eligable_to_vote(self.state.players.get(&sender)) && self.eligable_target(target)) {
           return Ok(());
         }
-        // If it's night, and the sender hasn't voted yet, record their vote.
-        if let GameStatus::Playing(PlayState::Night(NightState { votes, .. })) =
-          &mut self.state.status
+        // If it's day, and the sender hasn't voted yet, record their vote.
+        if let GameStatus::Playing(PlayState::Day(DayState { votes, .. })) = &mut self.state.status
         {
           if let Entry::Vacant(o) = votes.entry(sender) {
             o.insert(target);
           }
         }
-      }
+      },
     };
     Ok(())
   }

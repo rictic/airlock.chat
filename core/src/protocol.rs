@@ -8,7 +8,7 @@ pub enum ClientToServerMessage {
   Killed(DeadBody),
   FinishedTask(FinishedTask),
   Join(Join),
-  Vote {target: VoteTarget},
+  Vote { target: VoteTarget },
   StartGame(),
 }
 

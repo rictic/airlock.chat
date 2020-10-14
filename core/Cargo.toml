@@ -3,6 +3,7 @@ name = "rust_us_core"
 version = "0.1.0"
 authors = ["Peter Burns <rictic@gmail.com>"]
 edition = "2018"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,3 +12,6 @@ serde_json = "1.0.57"
 serde = { version = "1.0.116", features = ["derive"] }
 rand = { version = "0.7.3", features = ["wasm-bindgen"] }
 js-sys = "0.3.45"
+
+[build-dependencies]
+vergen = "3"

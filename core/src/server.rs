@@ -72,7 +72,11 @@ impl GameServer {
         }
         self.broadcast_snapshot()?;
       }
-      ClientToServerMessage::Join(join) => {
+      ClientToServerMessage::Join{version, details: join} => {
+        if version != get_version_sha() {
+          // TODO: send an error and close the connection.
+          return Ok(());
+        }
         if self.state.status == GameStatus::Lobby {
           if let JoinRequest::JoinAsPlayer {
             name,

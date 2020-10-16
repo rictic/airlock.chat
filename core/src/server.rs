@@ -4,6 +4,8 @@ use crate::*;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use instant::Instant;
@@ -47,7 +49,19 @@ impl GameServer {
     if self.state.status != GameStatus::Connecting && timed_out {
       self.state.status = GameStatus::Disconnected;
     }
-    self.state.simulate(elapsed)
+    let finished = self.state.simulate(elapsed);
+    if let GameStatus::Won(_) = self.state.status {
+      println!("Game won, trying to transmit save game");
+      if let Some(recording) = &self.recording {
+        println!("Recording exists, transmitting...");
+        let replay = &ServerToClientMessage::Replay(RecordedGame::new(recording.to_vec()));
+        match self.broadcaster.broadcast(replay) {
+          Ok(()) => println!("Transmit successful!"),
+          Err(e) => println!("Error broadcasting replay: {}", e),
+        }
+      }
+    }
+    finished
   }
 
   pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
@@ -132,6 +146,7 @@ impl GameServer {
           // TODO: send an error and close the connection.
           return Ok(None);
         }
+        let mut decision = None;
         if self.state.status == GameStatus::Lobby {
           if let JoinRequest::JoinAsPlayer {
             name,
@@ -162,11 +177,31 @@ impl GameServer {
               add_player = true;
             }
             if add_player {
+              let position = match prerecorded_decision {
+                LiveGame => {
+                  let starting_position_seed: f64 = rand::random();
+                  Position {
+                    x: 275.0
+                      + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
+                    y: 275.0
+                      + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
+                  }
+                }
+                Playback(Some(ServerDecision::NewPlayerPosition(pos))) => *pos,
+                _ => {
+                  return Err(
+                    format!(
+                      "Internal error: bad recording. Expected NewPlayerPosition, got {:?}",
+                      prerecorded_decision
+                    )
+                    .into(),
+                  )
+                }
+              };
+              decision = Some(ServerDecision::NewPlayerPosition(position));
               // Add the new player (possibly with a new color)
-              self
-                .state
-                .players
-                .insert(sender, Player::new(sender, name.to_string(), *color));
+              let player = Player::new(sender, name.to_string(), *color, position);
+              self.state.players.insert(sender, player);
             }
           }
           // In all other cases, they're joining as a spectator.
@@ -180,6 +215,7 @@ impl GameServer {
         )?;
         // Send out a snapshot to catch the new client up, whether or not they're playing.
         self.broadcast_snapshot()?;
+        return Ok(decision);
       }
       ClientToServerMessage::Vote { target } => {
         if !(eligable_to_vote(self.state.players.get(&sender)) && self.eligable_target(*target)) {
@@ -243,37 +279,61 @@ fn eligable_to_vote(voter: Option<&Player>) -> bool {
   }
 }
 
-struct PlaybackBroadcaster {}
+struct PlaybackBroadcaster {
+  pending_messages: Arc<Mutex<Vec<ServerToClientMessage>>>,
+}
 impl Broadcaster for PlaybackBroadcaster {
-  fn broadcast(&self, _: &ServerToClientMessage) -> Result<(), Box<(dyn Error + 'static)>> {
+  fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
+    let mut messages = self.pending_messages.lock().unwrap();
+    messages.push(message.clone());
     Ok(())
   }
-  fn send_to_player(
-    &self,
-    _: &UUID,
-    _: &ServerToClientMessage,
-  ) -> Result<(), Box<(dyn Error + 'static)>> {
+  fn send_to_player(&self, _: &UUID, _: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
+    // ??? what to do here
     Ok(())
   }
 }
-struct PlaybackServer {
+pub struct PlaybackTx {}
+impl GameTx for PlaybackTx {
+  fn send(&self, _: &ClientToServerMessage) -> Result<(), String> {
+    Ok(()) // do nothing
+  }
+}
+
+pub struct PlaybackServer {
   current_time: Duration,
   current_index: usize,
   recording: Vec<RecordingEntry>,
   game_server: GameServer,
+  pending_messages: Arc<Mutex<Vec<ServerToClientMessage>>>,
 }
+
 impl PlaybackServer {
   pub fn new(recording: Vec<RecordingEntry>) -> Self {
+    let pending_messages = Arc::new(Mutex::new(Vec::new()));
+    let mut game_server = GameServer::new(
+      Box::new(PlaybackBroadcaster {
+        pending_messages: pending_messages.clone(),
+      }),
+      false,
+    );
+    game_server.state.status = GameStatus::Lobby;
     Self {
       current_time: Duration::from_secs(0),
       current_index: 0,
-      game_server: GameServer::new(Box::new(PlaybackBroadcaster {}), false),
+      game_server,
       recording,
+      pending_messages,
     }
   }
 
-  pub fn simulate(&mut self, elapsed: Duration) -> Result<(), Box<dyn Error>> {
+  pub fn simulate(
+    &mut self,
+    elapsed: Duration,
+    player: &mut GameAsPlayer,
+  ) -> Result<(usize, usize), Box<dyn Error>> {
     let new_time = self.current_time + elapsed;
+    let mut server_messages = 0;
     loop {
       let entry = match self.recording.get(self.current_index) {
         // Done with entries, just uh... continue simulating!
@@ -290,9 +350,16 @@ impl PlaybackServer {
         RecordingEvent::Message(message) => message,
       };
       self.game_server.handle_message_playback(message)?;
+      server_messages += 1;
     }
     self.game_server.simulate(elapsed);
     self.current_time = new_time;
-    Ok(())
+    let mut pending_messages = self.pending_messages.lock().unwrap();
+    let num_handled = pending_messages.len();
+    for message in pending_messages.iter() {
+      player.handle_msg(message.clone())?;
+    }
+    pending_messages.clear();
+    Ok((server_messages, num_handled))
   }
 }

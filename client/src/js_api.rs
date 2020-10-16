@@ -18,6 +18,7 @@ pub struct GameWrapper {
   canvas: Canvas,
   previous_frame_time: Instant,
   game: Arc<Mutex<Option<GameAsPlayer>>>,
+  playback_server: Option<PlaybackServer>,
 }
 
 #[wasm_bindgen]
@@ -71,6 +72,16 @@ impl GameWrapper {
     let now = Instant::now();
     let elapsed = now - self.previous_frame_time;
     self.previous_frame_time = now;
+    if let Some(playback_server) = &mut self.playback_server {
+      let (server_count, player_count) = playback_server
+        .simulate(elapsed, game)
+        .map_err(|e| JsValue::from(format!("{}", e)))?;
+      console_log!(
+        "Handling {} messages on the playback server, passing {} to the player",
+        server_count,
+        player_count
+      );
+    }
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
     }
@@ -126,27 +137,76 @@ impl GameWrapper {
   }
 }
 
+fn get_recorded_game() -> Result<Option<RecordedGame>, JsValue> {
+  let local_storage = web_sys::window()
+    .ok_or("no window")?
+    .local_storage()?
+    .ok_or("no window.localStorage")?;
+  let value = local_storage.get("latest game")?;
+  let encoded_game = match value {
+    None => return Ok(None),
+    Some(g) => g,
+  };
+  let game = serde_json::from_str(&encoded_game).map_err(|e| {
+    format!(
+      "Unable to decode game recording from localStorage {:?} – {:?}",
+      encoded_game, e
+    )
+  })?;
+  if let ServerToClientMessage::Replay(game) = game {
+    return Ok(Some(game));
+  }
+  Ok(None)
+}
+
+pub fn save_recorded_game(encoded_game: &str) -> Result<(), JsValue> {
+  let local_storage = web_sys::window()
+    .ok_or("no window")?
+    .local_storage()?
+    .ok_or("no window.localStorage")?;
+  local_storage.set("latest game", encoded_game)?;
+  Ok(())
+}
+
 #[wasm_bindgen]
 pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
-  // Ok, this is pretty crazy, but I can explain.
-  // We need to set up the websocket callbacks using wasm_bindgen for the initial connection,
-  // and handling messages, and disconnecting.
-  // All of the actual logic happens inside of Game.
-  // The callbacks need to access the Game.
-  // Once we hand the WebSocket to the Game then it owns it, so we have to do our websocket setup
-  // before creating the game, but we need to access the game inside the callbacks...
-  // So here we are.
-  let wrapper = GameWrapper {
-    canvas: Canvas::find_in_document()?,
-    previous_frame_time: Instant::now(),
-    game: Arc::new(Mutex::new(None)),
-  };
+  let location = web_sys::window().ok_or("no window")?.location();
+  let should_playback = location.search()?.contains("recording");
 
-  let join = JoinRequest::JoinAsPlayer {
-    name,
-    preferred_color: Color::random(),
-  };
-  create_websocket_and_listen(wrapper.game.clone(), join)?;
+  let wrapper;
+  if !should_playback {
+    wrapper = GameWrapper {
+      canvas: Canvas::find_in_document()?,
+      previous_frame_time: Instant::now(),
+      game: Arc::new(Mutex::new(None)),
+      playback_server: None,
+    };
+    let join = JoinRequest::JoinAsPlayer {
+      name,
+      preferred_color: Color::random(),
+    };
+    create_websocket_and_listen(wrapper.game.clone(), join)?;
+  } else {
+    let recording = match get_recorded_game()? {
+      None => return Err(JsValue::from("No saved game found")),
+      Some(recording) => recording,
+    };
+    let playback_server = Some(PlaybackServer::new(recording.entries.to_vec()));
+    let connection = Box::new(PlaybackTx {});
+    let mut game_as_player = GameAsPlayer::new(UUID::random(), connection);
+    game_as_player.state.status = GameStatus::Lobby;
+    console_log!(
+      "game_as_player.state.status: {:?}",
+      game_as_player.state.status
+    );
+    wrapper = GameWrapper {
+      canvas: Canvas::find_in_document()?,
+      previous_frame_time: Instant::now(),
+      playback_server,
+      game: Arc::new(Mutex::new(Some(game_as_player))),
+    }
+  }
+
   Ok(wrapper)
 }

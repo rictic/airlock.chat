@@ -112,7 +112,7 @@ impl GameState {
     self.status = GameStatus::Won(team);
   }
 
-  pub fn get_game_start_info(&self) -> BTreeMap<UUID, PlayerStartInfo> {
+  pub fn get_game_start_info(&self) -> StartInfo {
     let mut assignments: BTreeMap<UUID, PlayerStartInfo> = self
       .players
       .keys()
@@ -124,20 +124,19 @@ impl GameState {
         player_start_info.team = Team::Impostors;
       }
     }
-    assignments
+    StartInfo {
+      assignments: assignments.into_iter().collect(),
+    }
   }
 
-  pub fn note_game_started(
-    &mut self,
-    start_info: &BTreeMap<UUID, PlayerStartInfo>,
-  ) -> Result<(), String> {
+  pub fn note_game_started(&mut self, start_info: &StartInfo) -> Result<(), String> {
     if self.status != GameStatus::Lobby {
       return Err(format!(
         "Internal error: got a message to start a game when not in the lobby!? Game status: {:?}",
         self.status
       ));
     }
-    for (uuid, start_info) in start_info.iter() {
+    for (uuid, start_info) in start_info.assignments.iter() {
       if let Some(player) = self.players.get_mut(uuid) {
         player.impostor = start_info.team == Team::Impostors;
         player.tasks = start_info.tasks.clone();
@@ -283,13 +282,18 @@ impl Position {
       .abs()
   }
 
-  fn random() -> Position {
+  pub fn random() -> Position {
     let mut rng = rand::thread_rng();
     Position {
       x: rng.gen_range(30.0, WIDTH - 30.0),
       y: rng.gen_range(30.0, HEIGHT - 30.0),
     }
   }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+pub struct StartInfo {
+  pub assignments: Vec<(UUID, PlayerStartInfo)>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -366,17 +370,13 @@ pub struct Player {
 }
 
 impl Player {
-  pub fn new(uuid: UUID, name: String, color: Color) -> Player {
-    let starting_position_seed: f64 = rand::random();
+  pub fn new(uuid: UUID, name: String, color: Color, position: Position) -> Player {
     Player {
       name,
       uuid,
       color,
       dead: false,
-      position: Position {
-        x: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
-        y: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
-      },
+      position,
       impostor: false,
       // 6 random tasks
       tasks: vec![],

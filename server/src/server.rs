@@ -41,10 +41,12 @@ struct BroadCastServer {
 impl Broadcaster for BroadCastServer {
   fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
     println!("Broadcasting {:?}", message);
-    broadcast(
-      self.room.clone(),
-      &Message::text(serde_json::to_string(message)?),
-    )?;
+    let message = match message {
+      ServerToClientMessage::Welcome { .. }
+      | ServerToClientMessage::Snapshot(_)
+      | ServerToClientMessage::Replay(_) => Message::text(serde_json::to_string(message)?),
+    };
+    broadcast(self.room.clone(), &message)?;
     Ok(())
   }
 

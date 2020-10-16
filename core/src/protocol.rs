@@ -1,7 +1,6 @@
 use crate::*;
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -100,8 +99,8 @@ pub enum MaybeDecisionIfPlayingBackRecording {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RecordedGame {
   // The version of the software this was recorded with.
-  version: String,
-  entries: Vec<RecordingEntry>,
+  pub version: String,
+  pub entries: Vec<RecordingEntry>,
 }
 impl RecordedGame {
   pub fn new(entries: Vec<RecordingEntry>) -> Self {
@@ -129,9 +128,10 @@ pub struct PlaybackMessage {
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerDecision {
-  StartInfo(BTreeMap<UUID, PlayerStartInfo>),
+  StartInfo(StartInfo),
+  NewPlayerPosition(Position),
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PlayerStartInfo {
   pub team: Team,
   pub tasks: Vec<Task>,

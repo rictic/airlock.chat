@@ -20,7 +20,7 @@ pub struct GameAsPlayer {
   pub my_uuid: UUID,
   inputs: InputState,
   pub state: GameState,
-  socket: Box<dyn GameTx>,
+  pub socket: Box<dyn GameTx>,
 }
 
 pub trait GameTx {
@@ -183,6 +183,7 @@ impl GameAsPlayer {
     if self.state.status.finished() {
       return Ok(()); // Nothing more to say. Refresh for a new game!
     }
+    println!("Handling a {} message", message.kind());
     match message {
       ServerToClientMessage::Welcome {
         connection_id: uuid,

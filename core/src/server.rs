@@ -1,5 +1,5 @@
-use crate::protocol::{RecordingEvent, RecordingEntry};
 use crate::protocol::MaybeDecisionIfPlayingBackRecording::*;
+use crate::protocol::{RecordingEntry, RecordingEvent};
 use crate::*;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeSet;
@@ -272,8 +272,8 @@ impl PlaybackServer {
     }
   }
 
-  pub fn simulate(&mut self, elapsed: f64) -> Result<(), Box<dyn Error>> {
-    let new_time = self.current_time + Duration::from_millis(elapsed as u64);
+  pub fn simulate(&mut self, elapsed: Duration) -> Result<(), Box<dyn Error>> {
+    let new_time = self.current_time + elapsed;
     loop {
       let entry = match self.recording.get(self.current_index) {
         // Done with entries, just uh... continue simulating!
@@ -296,4 +296,3 @@ impl PlaybackServer {
     Ok(())
   }
 }
-

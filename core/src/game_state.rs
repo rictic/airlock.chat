@@ -112,27 +112,43 @@ impl GameState {
     self.status = GameStatus::Won(team);
   }
 
-  pub fn note_game_started(&mut self) -> Result<(), String> {
+  pub fn get_game_start_info(&self) -> BTreeMap<UUID, PlayerStartInfo> {
+    let mut assignments: BTreeMap<UUID, PlayerStartInfo> = self
+      .players
+      .keys()
+      .map(|k| (*k, PlayerStartInfo::default()))
+      .collect();
+    let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
+    for (i, (_uuid, player_start_info)) in assignments.iter_mut().enumerate() {
+      if i == impostor_index {
+        player_start_info.team = Team::Impostors;
+      }
+    }
+    assignments
+  }
+
+  pub fn note_game_started(
+    &mut self,
+    start_info: &BTreeMap<UUID, PlayerStartInfo>,
+  ) -> Result<(), String> {
     if self.status != GameStatus::Lobby {
       return Err(format!(
         "Internal error: got a message to start a game when not in the lobby!? Game status: {:?}",
         self.status
       ));
     }
-    self.status = GameStatus::Playing(PlayState::Night);
-    let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
-    for (i, (_, player)) in self.players.iter_mut().enumerate() {
-      if i == impostor_index {
-        player.impostor = true;
+    for (uuid, start_info) in start_info.iter() {
+      if let Some(player) = self.players.get_mut(uuid) {
+        player.impostor = start_info.team == Team::Impostors;
+        player.tasks = start_info.tasks.clone();
+      } else {
+        return Err(format!(
+          "Unable to find player with uuid {} when starting game.",
+          uuid
+        ));
       }
-      player.tasks = (0..6)
-        .map(|_| Task {
-          finished: false,
-          position: Position::random(),
-        })
-        .collect();
     }
-
+    self.status = GameStatus::Playing(PlayState::Night);
     Ok(())
   }
 
@@ -327,6 +343,14 @@ impl Color {
 pub struct Task {
   pub position: Position,
   pub finished: bool,
+}
+impl Default for Task {
+  fn default() -> Self {
+    Self {
+      finished: false,
+      position: Position::random(),
+    }
+  }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]

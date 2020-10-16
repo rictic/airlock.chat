@@ -24,9 +24,10 @@ pub struct WebsocketServer {
 impl Default for WebsocketServer {
   fn default() -> Self {
     let room = Room::default();
-    let game_server = Arc::new(Mutex::new(GameServer::new(Box::new(BroadCastServer {
-      room: room.clone(),
-    }))));
+    let game_server = Arc::new(Mutex::new(GameServer::new(
+      Box::new(BroadCastServer { room: room.clone() }),
+      true,
+    )));
     WebsocketServer { room, game_server }
   }
 }
@@ -79,7 +80,10 @@ pub async fn client_connected(ws: WebSocket, ws_server: Arc<Mutex<WebsocketServe
       let room = Room::default();
       let broadcast_server = BroadCastServer { room: room.clone() };
       ws_server.room = room;
-      ws_server.game_server = Arc::new(Mutex::new(GameServer::new(Box::new(broadcast_server))));
+      ws_server.game_server = Arc::new(Mutex::new(GameServer::new(
+        Box::new(broadcast_server),
+        true,
+      )));
       println!("Starting a new game for the new client!");
     }
     game_server = ws_server.game_server.clone();

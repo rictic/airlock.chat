@@ -23,7 +23,7 @@ impl TestEnvironment {
     TestEnvironment {
       game_server: GameServer::new(Box::new(TestBroadcaster {
         players: messages.clone(),
-      })),
+      }), true),
       server_to_client_queue: messages,
       players: HashMap::default(),
       player_queue: HashMap::default(),

@@ -238,6 +238,9 @@ impl GameAsPlayer {
           }
         }
       }
+      ServerToClientMessage::Replay(_recorded_game) => {
+        // Nothing to handle here yet.
+      }
     }
     Ok(())
   }

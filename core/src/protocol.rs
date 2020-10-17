@@ -8,6 +8,7 @@ pub enum ClientToServerMessage {
   Killed(DeadBody),
   FinishedTask(FinishedTask),
   Join(Join),
+  Vote { target: VoteTarget },
   StartGame(),
 }
 
@@ -20,6 +21,7 @@ impl ClientToServerMessage {
       ClientToServerMessage::FinishedTask(_) => "FinishedTask",
       ClientToServerMessage::Join(_) => "Join",
       ClientToServerMessage::StartGame() => "StartGame",
+      ClientToServerMessage::Vote { .. } => "Vote",
     }
   }
 }

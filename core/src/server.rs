@@ -1,4 +1,5 @@
 use crate::*;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeSet;
 use std::error::Error;
 
@@ -32,11 +33,8 @@ impl GameServer {
   }
 
   pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
-    self.state.players.remove(&disconnected_player);
+    self.state.handle_disconnection(disconnected_player);
     self.broadcast_snapshot()?;
-    if self.state.players.is_empty() {
-      self.state.status = GameStatus::Disconnected;
-    }
     Ok(())
   }
 
@@ -115,6 +113,18 @@ impl GameServer {
         // Send out a snapshot to catch the new client up, whether or not they're playing.
         self.broadcast_snapshot()?;
       }
+      ClientToServerMessage::Vote { target } => {
+        if !(eligable_to_vote(self.state.players.get(&sender)) && self.eligable_target(target)) {
+          return Ok(());
+        }
+        // If it's day, and the sender hasn't voted yet, record their vote.
+        if let GameStatus::Playing(PlayState::Day(DayState { votes, .. })) = &mut self.state.status
+        {
+          if let Entry::Vacant(o) = votes.entry(sender) {
+            o.insert(target);
+          }
+        }
+      },
     };
     Ok(())
   }
@@ -123,11 +133,30 @@ impl GameServer {
     self
       .broadcaster
       .broadcast(&ServerToClientMessage::Snapshot(Snapshot {
-        status: self.state.status,
+        status: self.state.status.clone(),
         bodies: self.state.bodies.clone(),
         players: self.state.players.iter().map(|(_, p)| p.clone()).collect(),
       }))?;
     Ok(())
+  }
+
+  fn eligable_target(&self, target: VoteTarget) -> bool {
+    match target {
+      VoteTarget::Skip => {
+        true // skip is always valid
+      }
+      VoteTarget::Player { uuid } => match self.state.players.get(&uuid) {
+        None => false,
+        Some(p) => !p.dead,
+      },
+    }
+  }
+}
+
+fn eligable_to_vote(voter: Option<&Player>) -> bool {
+  match voter {
+    Some(player) => player.eligable_to_vote(),
+    None => false,
   }
 }
 

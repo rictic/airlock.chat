@@ -9,6 +9,9 @@ module.exports = {
   },
   mode: "production",
   plugins: [
-    new CopyWebpackPlugin(['index.html'])
+    new CopyWebpackPlugin([
+        'index.html', 'pwa_manifest.json', 'assets',
+        'serviceworker.js'
+    ])
   ],
 };

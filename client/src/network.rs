@@ -35,12 +35,34 @@ impl GameTx for WebSocketTx {
   }
 }
 
-pub fn wire_up_websocket(
-  wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>>,
-  ws: &WebSocket,
+fn get_websocket_url() -> Result<String, JsValue> {
+  let location = web_sys::window().ok_or("no window")?.location();
+  let scheme = location.protocol()?;
+  let port = location.port()?;
+  let hostname = location.hostname()?;
+
+  if scheme == "https:" {
+    // we're in prod, just use the prod URL
+    return Ok(format!("wss://{}/", hostname));
+  }
+
+  if port == "8080" {
+    // we're in dev mode, use the dev mode port
+    return Ok(format!("ws://{}:3012/", hostname));
+  }
+
+  // we're running the prod server locally without TLS
+  Ok(format!("ws://{}/", hostname))
+}
+
+// Creates a websocket and hooks it up to the callbacks on the given GameAsPlayer.
+pub fn create_websocket_and_listen(
+  game_as_player: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>>,
   join: Join,
-) {
-  let wrapper_wrapper_clone = wrapper_wrapper.clone();
+) -> Result<Box<dyn GameTx>, JsValue> {
+  let ws = WebSocket::new(&get_websocket_url()?)?;
+
+  let game_as_player_clone = game_as_player.clone();
   let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
     // Starting with assuming text messages. Can make efficient later (bson?).
     if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
@@ -52,10 +74,10 @@ pub fn wire_up_websocket(
           return;
         }
       };
-      let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
+      let option_wrapped = &game_as_player_clone.lock().unwrap();
       let wrapper = option_wrapped.as_ref().unwrap();
-      let mut game = wrapper.lock().unwrap();
-      match game.handle_msg(message) {
+      let mut game_as_player = wrapper.lock().unwrap();
+      match game_as_player.handle_msg(message) {
         Ok(()) => (),
         Err(e) => {
           console_log!("Error handling message {:?} – {:?}", strng, e);
@@ -76,10 +98,10 @@ pub fn wire_up_websocket(
   ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
   onerror_callback.forget();
 
-  let wrapper_wrapper_clone = wrapper_wrapper.clone();
+  let game_as_player_clone = game_as_player.clone();
   let onclose_callback = Closure::wrap(Box::new(move |_| {
     console_log!("websocket closed");
-    let option_wrapped = &wrapper_wrapper_clone.lock().unwrap();
+    let option_wrapped = &game_as_player_clone.lock().unwrap();
     let wrapper = option_wrapped.as_ref().unwrap();
     let mut game = wrapper.lock().unwrap();
     game
@@ -93,14 +115,15 @@ pub fn wire_up_websocket(
 
   let onopen_callback = Closure::wrap(Box::new(move |_| {
     console_log!("socket opened");
-    let option_wrapped = &wrapper_wrapper.lock().unwrap();
+    let option_wrapped = &game_as_player.lock().unwrap();
     let wrapper = &option_wrapped.as_ref().unwrap();
-    let mut game = wrapper.lock().unwrap();
+    let mut game_as_player = wrapper.lock().unwrap();
     let join = join.clone();
-    game
+    game_as_player
       .connected(join)
       .expect("Could not handle game.connected()");
   }) as Box<dyn FnMut(JsValue)>);
   ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
   onopen_callback.forget();
+  Ok(Box::new(WebSocketTx::new(ws)))
 }

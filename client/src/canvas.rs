@@ -105,7 +105,7 @@ impl Canvas {
   }
 
   // Draws the current game state.
-  pub fn draw(&mut self, game: Arc<Mutex<GameAsPlayer>>) -> Result<(), Box<dyn Error>> {
+  pub fn draw(&mut self, game: Arc<Mutex<Option<GameAsPlayer>>>) -> Result<(), Box<dyn Error>> {
     self.set_dimensions().map_err(|e| format!("{:?}", e))?;
     let game = game.lock().unwrap();
     let context = &self.context;
@@ -115,6 +115,10 @@ impl Canvas {
     context.rect(0.0, 0.0, self.width, self.height);
     context.set_fill_style(&JsValue::from_str("#f3f3f3"));
     context.fill();
+    if game.is_none() {
+      return Ok(());
+    }
+    let game = game.as_ref().unwrap();
     if game.state.status == GameStatus::Connecting {
       return Ok(());
     }

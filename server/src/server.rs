@@ -110,10 +110,8 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>, room: Room) {
   }
 }
 
-async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, mut socket: WebSocket) {
-  // Insert the write part of this peer to the peer map.
-  let (tx, rx) = unbounded();
-
+async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, socket: WebSocket) {
+  // Ensure we're simulating this game.
   {
     let mut game_server_unlocked = game_server.lock().unwrap();
     if game_server_unlocked.state.status == GameStatus::Connecting {
@@ -122,58 +120,20 @@ async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, mut 
     }
   }
 
-  let uuid: UUID;
-  println!("Waiting on initial message...");
-  let message = match socket.next().await {
-    None => return, // client hung up immediately
-    Some(Ok(m)) => m,
-    Some(Err(e)) => {
-      println!("Error reading initial message from client: {:?}", e);
-      return;
-    }
-  };
-
-  println!("Received initial message...");
-  let join_text = match message.to_str() {
-    Ok(s) => s,
-    Err(_) => {
-      println!(
-        "Client didn't introduce themselves properly, hanging up. Bad message: {:?}",
-        message
-      );
-      return;
-    }
-  };
-  println!("Got initial message: {}", join_text);
-  let message: ClientToServerMessage = match serde_json::from_str(&join_text) {
-    Ok(m) => m,
-    Err(e) => {
-      println!("Unable to deserialize {:?} – {:?}", join_text, e);
-      return;
-    }
-  };
-  let decoded_join = match message {
-    ClientToServerMessage::Join(join) => join,
-    _ => {
-      println!("Client didn't introduce themselves with a join message. Hanging up");
-      return;
-    }
-  };
-  uuid = decoded_join.uuid;
-  room.lock().unwrap().insert(uuid, tx);
-  {
-    let mut game_server = game_server.lock().unwrap();
-    match game_server.handle_message(uuid, ClientToServerMessage::Join(decoded_join)) {
-      Ok(_) => (),
-      Err(e) => {
-        println!("Failed to handle message from {:?}: {}", uuid, e);
-        return;
-      }
-    }
-  }
-
+  // Insert the write part of this peer to the peer map.
+  let (tx, rx) = unbounded();
   let (outgoing, incoming) = socket.split();
 
+  // Generate a connection id for our user.
+  let uuid = UUID::random();
+
+  // Hook up the ability to send messages to this client.
+  room.lock().unwrap().insert(uuid, tx);
+
+  // Buffer and forward messages.
+  let receive_from_others = rx.map(Ok).forward(outgoing);
+
+  // Handle incoming messages from the client.
   let broadcast_incoming = incoming.try_for_each(|msg| {
     let message_text = match msg.to_str() {
       Ok(s) => s,
@@ -198,9 +158,10 @@ async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, mut 
     future::ok(())
   });
 
-  let receive_from_others = rx.map(Ok).forward(outgoing);
-
+  // Some magic incantation for futures to work.
   pin_mut!(broadcast_incoming, receive_from_others);
+
+  // Wait for either side to close the connection
   future::select(broadcast_incoming, receive_from_others).await;
 
   println!("{} disconnected", uuid);
@@ -208,11 +169,13 @@ async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, mut 
 
   let mut game_server = game_server.lock().unwrap();
   if game_server.state.status.finished() {
-    return; // The game is done, and the simulation loop will clean up, just return.
-  }
-  match game_server.disconnected(uuid) {
-    Ok(()) => (),
-    Err(e) => println!("Error handling disconnection: {}", e),
+    // The game is done, and the simulation loop will clean up, just return.
+  } else {
+    // Disconnect this connection from the game server.
+    match game_server.disconnected(uuid) {
+      Ok(()) => (),
+      Err(e) => println!("Error handling disconnection: {}", e),
+    }
   }
 }
 

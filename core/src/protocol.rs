@@ -7,7 +7,7 @@ pub enum ClientToServerMessage {
   Move(MoveMessage),
   Killed(DeadBody),
   FinishedTask(FinishedTask),
-  Join(Join),
+  Join(JoinRequest),
   Vote { target: VoteTarget },
   StartGame(),
 }
@@ -28,23 +28,27 @@ impl ClientToServerMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerToClientMessage {
+  Welcome { connection_id: UUID },
   Snapshot(Snapshot),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum JoinRequest {
+  JoinAsPlayer {
+    preferred_color: Color,
+    name: String,
+  },
+  JoinAsSpectator,
 }
 
 impl ServerToClientMessage {
   #[allow(dead_code)]
   pub fn kind(&self) -> &'static str {
     match self {
+      ServerToClientMessage::Welcome { .. } => "Welcome",
       ServerToClientMessage::Snapshot(_) => "Snapshot",
     }
   }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Join {
-  pub uuid: UUID,
-  pub preferred_color: Color,
-  pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]

@@ -72,44 +72,53 @@ impl GameServer {
         }
         self.broadcast_snapshot()?;
       }
-      ClientToServerMessage::Join(Join {
-        uuid,
-        name,
-        preferred_color,
-      }) => {
+      ClientToServerMessage::Join(join) => {
         if self.state.status == GameStatus::Lobby {
-          if self.state.players.get(&uuid).is_some() {
-            return Ok(()); // we know about this player already
-          }
-          // ok, it's a new player, and we have room for them. if their color is
-          // already taken, give them a new one.
-          let taken_colors: BTreeSet<Color> =
-            self.state.players.iter().map(|(_, p)| p.color).collect();
-          let add_player;
-          let mut color = preferred_color;
-          if taken_colors.contains(&color) {
-            match Color::all().iter().find(|c| !taken_colors.contains(c)) {
-              None => {
-                add_player = false; // we can't add this player, all colors are taken!
-              }
-              Some(c) => {
-                add_player = true;
-                color = *c;
-              }
+          if let JoinRequest::JoinAsPlayer {
+            name,
+            preferred_color,
+          } = join
+          {
+            if self.state.players.get(&sender).is_some() {
+              return Ok(()); // we know about this player already
             }
-          } else {
-            // player's preferred color wasn't taken, they're good to go!
-            add_player = true;
+            // ok, it's a new player, and we have room for them. if their color is
+            // already taken, give them a new one.
+            let taken_colors: BTreeSet<Color> =
+              self.state.players.iter().map(|(_, p)| p.color).collect();
+            let add_player;
+            let mut color = preferred_color;
+            if taken_colors.contains(&color) {
+              match Color::all().iter().find(|c| !taken_colors.contains(c)) {
+                None => {
+                  add_player = false; // we can't add this player, all colors are taken!
+                }
+                Some(c) => {
+                  add_player = true;
+                  color = *c;
+                }
+              }
+            } else {
+              // player's preferred color wasn't taken, they're good to go!
+              add_player = true;
+            }
+            if add_player {
+              // Add the new player (possibly with a new color)
+              self
+                .state
+                .players
+                .insert(sender, Player::new(sender, name, color));
+            }
           }
-          if add_player {
-            // Add the new player (possibly with a new color)
-            self
-              .state
-              .players
-              .insert(uuid, Player::new(uuid, name, color));
-          }
+          // In all other cases, they're joining as a spectator.
         }
 
+        self.broadcaster.send_to_player(
+          &sender,
+          &ServerToClientMessage::Welcome {
+            connection_id: sender,
+          },
+        )?;
         // Send out a snapshot to catch the new client up, whether or not they're playing.
         self.broadcast_snapshot()?;
       }
@@ -124,7 +133,7 @@ impl GameServer {
             o.insert(target);
           }
         }
-      },
+      }
     };
     Ok(())
   }

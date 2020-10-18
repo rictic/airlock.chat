@@ -125,7 +125,7 @@ async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, sock
   let (outgoing, incoming) = socket.split();
 
   // Generate a connection id for our user.
-  let uuid = UUID::random();
+  let uuid = game_server.lock().unwrap().get_uuid_for_new_connection();
 
   // Hook up the ability to send messages to this client.
   room.lock().unwrap().insert(uuid, tx);

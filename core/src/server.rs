@@ -138,6 +138,10 @@ impl GameServer {
     Ok(())
   }
 
+  pub fn get_uuid_for_new_connection(&self) -> UUID {
+    UUID::random()
+  }
+
   fn broadcast_snapshot(&self) -> Result<(), Box<dyn Error>> {
     self
       .broadcaster

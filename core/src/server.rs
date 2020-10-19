@@ -23,6 +23,7 @@ pub trait Broadcaster: Send {
 // Useful so that we can implement a real game server with web sockets, and the test
 // game server, and potentially a future peer to peer in-client server.
 pub struct GameServer {
+  version: String,
   pub state: GameState,
   start_time: Instant,
   last_message_received_at: Instant,
@@ -31,10 +32,11 @@ pub struct GameServer {
 }
 
 impl GameServer {
-  pub fn new(broadcaster: Box<dyn Broadcaster>, record_game: bool) -> GameServer {
+  pub fn new(broadcaster: Box<dyn Broadcaster>, record_game: bool) -> Self {
     let now = Instant::now();
     let recording = if record_game { Some(Vec::new()) } else { None };
-    GameServer {
+    Self {
+      version: get_version_sha().to_string(),
       state: GameState::new(),
       start_time: now,
       last_message_received_at: now,
@@ -51,13 +53,13 @@ impl GameServer {
     }
     let finished = self.state.simulate(elapsed);
     if let GameStatus::Won(_) = self.state.status {
-      println!("Game won, trying to transmit save game");
+      console_log!("Game won, trying to transmit save game");
       if let Some(recording) = &self.recording {
-        println!("Recording exists, transmitting...");
+        console_log!("Recording exists, transmitting...");
         let replay = &ServerToClientMessage::Replay(RecordedGame::new(recording.to_vec()));
         match self.broadcaster.broadcast(replay) {
-          Ok(()) => println!("Transmit successful!"),
-          Err(e) => println!("Error broadcasting replay: {}", e),
+          Ok(()) => console_log!("Transmit successful!"),
+          Err(e) => console_log!("Error broadcasting replay: {}", e),
         }
       }
     }
@@ -142,9 +144,15 @@ impl GameServer {
         version,
         details: join,
       } => {
-        if version != get_version_sha() {
+        if version != &self.version {
           // TODO: send an error and close the connection.
-          return Ok(None);
+          return Err(
+            format!(
+              "Bad version in client join, need {} but got {}",
+              self.version, version
+            )
+            .into(),
+          );
         }
         let mut decision = None;
         if self.state.status == GameStatus::Lobby {
@@ -303,13 +311,14 @@ impl GameTx for PlaybackTx {
 pub struct PlaybackServer {
   current_time: Duration,
   current_index: usize,
-  recording: Vec<RecordingEntry>,
+  paused: bool,
+  recording: RecordedGame,
   game_server: GameServer,
   pending_messages: Arc<Mutex<Vec<ServerToClientMessage>>>,
 }
 
 impl PlaybackServer {
-  pub fn new(recording: Vec<RecordingEntry>) -> Self {
+  pub fn new(recording: RecordedGame) -> Self {
     let pending_messages = Arc::new(Mutex::new(Vec::new()));
     let mut game_server = GameServer::new(
       Box::new(PlaybackBroadcaster {
@@ -317,25 +326,87 @@ impl PlaybackServer {
       }),
       false,
     );
+    game_server.version = recording.version.clone();
     game_server.state.status = GameStatus::Lobby;
     Self {
       current_time: Duration::from_secs(0),
       current_index: 0,
+      paused: false,
       game_server,
       recording,
       pending_messages,
     }
   }
 
+  pub fn restart(&mut self) {
+    let mut game_server = GameServer::new(
+      Box::new(PlaybackBroadcaster {
+        pending_messages: self.pending_messages.clone(),
+      }),
+      false,
+    );
+    game_server.version = self.recording.version.clone();
+    game_server.state.status = GameStatus::Lobby;
+    self.game_server = game_server;
+    self.current_time = Duration::from_millis(0);
+    self.current_index = 0;
+  }
+
+  pub fn duration(&self) -> Duration {
+    // Assume that the final message marks the end of the recording.
+    self
+      .recording
+      .entries
+      .last()
+      .map(|e| e.since_start)
+      .unwrap_or_else(|| Duration::from_secs(0))
+  }
+
+  pub fn current_time(&self) -> Duration {
+    self.current_time
+  }
+
+  pub fn skip_to(
+    &mut self,
+    from_start: Duration,
+    player: &mut GameAsPlayer,
+  ) -> Result<(), Box<dyn Error>> {
+    if from_start < self.current_time {
+      self.restart();
+    }
+    while self.current_time < from_start {
+      let finished = self.simulate(Duration::from_millis(16), player, true)?;
+      if finished {
+        // the simulation is done, can't skip past this point
+        break;
+      }
+    }
+    self.game_server.broadcast_snapshot()?;
+    self.deliver_messages(player)?;
+    Ok(())
+  }
+
+  pub fn toggle_pause(&mut self) {
+    self.paused = !self.paused;
+  }
+
+  pub fn paused(&self) -> bool {
+    self.paused
+  }
+
   pub fn simulate(
     &mut self,
     elapsed: Duration,
     player: &mut GameAsPlayer,
-  ) -> Result<(usize, usize), Box<dyn Error>> {
+    force: bool,
+  ) -> Result<bool, Box<dyn Error>> {
+    if self.paused && !force {
+      return Ok(true);
+    }
     let new_time = self.current_time + elapsed;
     let mut server_messages = 0;
     loop {
-      let entry = match self.recording.get(self.current_index) {
+      let entry = match self.recording.entries.get(self.current_index) {
         // Done with entries, just uh... continue simulating!
         None => break,
         Some(entry) => entry,
@@ -352,14 +423,21 @@ impl PlaybackServer {
       self.game_server.handle_message_playback(message)?;
       server_messages += 1;
     }
+    if self.game_server.state.status.finished() && server_messages == 0 {
+      return Ok(true);
+    }
     self.game_server.simulate(elapsed);
     self.current_time = new_time;
+    self.deliver_messages(player)?;
+    Ok(false)
+  }
+
+  fn deliver_messages(&mut self, player: &mut GameAsPlayer) -> Result<(), Box<dyn Error>> {
     let mut pending_messages = self.pending_messages.lock().unwrap();
-    let num_handled = pending_messages.len();
     for message in pending_messages.iter() {
       player.handle_msg(message.clone())?;
     }
     pending_messages.clear();
-    Ok((server_messages, num_handled))
+    Ok(())
   }
 }

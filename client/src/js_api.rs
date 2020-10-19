@@ -4,6 +4,7 @@ use instant::Instant;
 use rust_us_core::*;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -34,6 +35,9 @@ impl GameWrapper {
     report: bool,
     activate: bool,
     play: bool,
+    skip_back: bool,
+    skip_forward: bool,
+    pause_playback: bool,
   ) -> Result<(), JsValue> {
     let mut game = self
       .game
@@ -43,21 +47,53 @@ impl GameWrapper {
       return Ok(());
     }
     let game = game.as_mut().unwrap();
+    let prev_input = game.inputs();
+    let input = InputState {
+      up,
+      down,
+      left,
+      right,
+      kill,
+      report,
+      activate,
+      play,
+      skip_back,
+      skip_forward,
+      pause_playback,
+    };
+    if let Some(playback_server) = &mut self.playback_server {
+      if input.skip_back && !prev_input.skip_back {
+        let time = playback_server.current_time();
+        playback_server
+          .skip_to(
+            time
+              .checked_sub(Duration::from_secs(5))
+              .unwrap_or_else(|| Duration::from_secs(0)),
+            game,
+          )
+          .map_err(|e| JsValue::from(format!("{}", e)))?;
+        console_log!("Skipped back");
+      } else if input.skip_forward && !prev_input.skip_forward {
+        let time = playback_server.current_time();
+        playback_server
+          .skip_to(
+            time
+              .checked_add(Duration::from_secs(5))
+              .unwrap_or_else(|| playback_server.duration()),
+            game,
+          )
+          .map_err(|e| JsValue::from(format!("{}", e)))?;
+      } else if input.pause_playback && !prev_input.pause_playback {
+        playback_server.toggle_pause();
+        if !playback_server.paused() {
+          self.previous_frame_time = Instant::now();
+        }
+      }
+    }
     if game.state.status.finished() {
       return Ok(());
     }
-    game
-      .take_input(InputState {
-        up,
-        down,
-        left,
-        right,
-        kill,
-        report,
-        activate,
-        play,
-      })
-      .map_err(JsValue::from)
+    game.take_input(input).map_err(JsValue::from)
   }
 
   pub fn simulate(&mut self) -> Result<bool, JsValue> {
@@ -73,14 +109,14 @@ impl GameWrapper {
     let elapsed = now - self.previous_frame_time;
     self.previous_frame_time = now;
     if let Some(playback_server) = &mut self.playback_server {
-      let (server_count, player_count) = playback_server
-        .simulate(elapsed, game)
+      if playback_server.paused() {
+        // Skip all simulation and drawing while paused until we
+        // get the next input.
+        return Ok(true);
+      }
+      playback_server
+        .simulate(elapsed, game, false)
         .map_err(|e| JsValue::from(format!("{}", e)))?;
-      console_log!(
-        "Handling {} messages on the playback server, passing {} to the player",
-        server_count,
-        player_count
-      );
     }
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
@@ -89,6 +125,7 @@ impl GameWrapper {
   }
 
   pub fn draw(&mut self) -> Result<(), JsValue> {
+    console_log!("drawing");
     self
       .canvas
       .draw(self.game.clone())
@@ -102,7 +139,27 @@ impl GameWrapper {
     }
     let game = game.as_ref().unwrap();
     let local_player = game.local_player();
-    match game.state.status {
+    if let Some(playback) = &self.playback_server {
+      let paused = playback.paused();
+      let finished = game.state.status.finished();
+      let prefix = match (finished, paused) {
+        (true, _) => "Replay finished at",
+        (false, true) => "Replay paused at",
+        (false, false) => "Watching replay at",
+      };
+      return format!(
+        "{} {} of {}\n{}",
+        prefix,
+        format_time(playback.current_time()),
+        format_time(playback.duration()),
+        self.get_status_internal(&game.state.status, local_player)
+      );
+    }
+    self.get_status_internal(&game.state.status, local_player)
+  }
+
+  fn get_status_internal(&self, status: &GameStatus, local_player: Option<&Player>) -> String {
+    match status {
       GameStatus::Connecting => "Conecting to game...".to_string(),
       GameStatus::Disconnected => "Disconnected from server.".to_string(),
       GameStatus::Lobby => {
@@ -137,6 +194,13 @@ impl GameWrapper {
   }
 }
 
+fn format_time(duration: Duration) -> String {
+  let secs = duration.as_secs();
+  let minutes = secs / 60;
+  let secs = secs % 60;
+  format!("{}:{:02}", minutes, secs)
+}
+
 fn get_recorded_game() -> Result<Option<RecordedGame>, JsValue> {
   let local_storage = web_sys::window()
     .ok_or("no window")?
@@ -153,10 +217,19 @@ fn get_recorded_game() -> Result<Option<RecordedGame>, JsValue> {
       encoded_game, e
     )
   })?;
-  if let ServerToClientMessage::Replay(game) = game {
-    return Ok(Some(game));
-  }
-  Ok(None)
+  let game = match game {
+    ServerToClientMessage::Replay(game) => game,
+    _ => {
+      return Err(
+        format!(
+          "Could not decode recorded game from local storage. Expected a Replay but found a {}",
+          game.kind()
+        )
+        .into(),
+      )
+    }
+  };
+  Ok(Some(game))
 }
 
 pub fn save_recorded_game(encoded_game: &str) -> Result<(), JsValue> {
@@ -173,12 +246,11 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
   let location = web_sys::window().ok_or("no window")?.location();
   let should_playback = location.search()?.contains("recording");
-
   let wrapper;
   if !should_playback {
     wrapper = GameWrapper {
-      canvas: Canvas::find_in_document()?,
       previous_frame_time: Instant::now(),
+      canvas: Canvas::find_in_document()?,
       game: Arc::new(Mutex::new(None)),
       playback_server: None,
     };
@@ -192,17 +264,18 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
       None => return Err(JsValue::from("No saved game found")),
       Some(recording) => recording,
     };
-    let playback_server = Some(PlaybackServer::new(recording.entries.to_vec()));
+    console_log!(
+      "Starting replay of version {} inside game with version {}",
+      recording.version,
+      get_version_sha()
+    );
+    let playback_server = Some(PlaybackServer::new(recording));
     let connection = Box::new(PlaybackTx {});
     let mut game_as_player = GameAsPlayer::new(UUID::random(), connection);
     game_as_player.state.status = GameStatus::Lobby;
-    console_log!(
-      "game_as_player.state.status: {:?}",
-      game_as_player.state.status
-    );
     wrapper = GameWrapper {
-      canvas: Canvas::find_in_document()?,
       previous_frame_time: Instant::now(),
+      canvas: Canvas::find_in_document()?,
       playback_server,
       game: Arc::new(Mutex::new(Some(game_as_player))),
     }

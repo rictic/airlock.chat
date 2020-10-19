@@ -1,10 +1,10 @@
 #![cfg(test)]
 use crate::*;
+use core::time::Duration;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
 
 #[test]
 fn pythagoras_was_right() {
@@ -173,7 +173,7 @@ impl Broadcaster for TestBroadcaster {
     console_log!("Broadcasting {} from server", message.kind());
     let mut players = self.players.lock().unwrap();
     for (uuid, messages) in players.iter_mut() {
-      println!("Sending to {}", uuid);
+      console_log!("Sending to {}", uuid);
       messages.push(message.clone());
     }
     console_log!("Broadcast complete");

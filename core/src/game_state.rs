@@ -102,9 +102,6 @@ impl GameState {
       let Speed { dx, dy } = player.speed;
       player.position.x += dx * time_steps_passed;
       player.position.y += dy * time_steps_passed;
-      // We don't handle inputs.q here because player position may be
-      // out of sync, but we _super_ don't want to let life or death
-      // get out of sync.
     }
   }
 

@@ -16,7 +16,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[wasm_bindgen]
 pub struct GameWrapper {
   canvas: Canvas,
-  game: Arc<Mutex<GameAsPlayer>>,
+  game: Arc<Mutex<Option<GameAsPlayer>>>,
 }
 
 #[wasm_bindgen]
@@ -37,6 +37,10 @@ impl GameWrapper {
       .game
       .lock()
       .expect("Internal Error: could not get a lock on the game");
+    if game.is_none() {
+      return Ok(());
+    }
+    let game = game.as_mut().unwrap();
     if game.state.status.finished() {
       return Ok(());
     }
@@ -59,6 +63,10 @@ impl GameWrapper {
       .game
       .lock()
       .expect("Internal Error: could not get a lock on the game");
+    if game.is_none() {
+      return Ok(false);
+    }
+    let game = game.as_mut().unwrap();
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
     }
@@ -74,6 +82,10 @@ impl GameWrapper {
 
   pub fn get_status(&self) -> String {
     let game = self.game.lock().unwrap();
+    if game.is_none() {
+      return "Connecting to game...".to_string();
+    }
+    let game = game.as_ref().unwrap();
     let local_player = game.local_player();
     match game.state.status {
       GameStatus::Connecting => "Conecting to game...".to_string(),
@@ -121,22 +133,15 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   // Once we hand the WebSocket to the Game then it owns it, so we have to do our websocket setup
   // before creating the game, but we need to access the game inside the callbacks...
   // So here we are.
-  let wrapper_wrapper: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>> = Arc::new(Mutex::new(None));
+  let wrapper = GameWrapper {
+    canvas: Canvas::find_in_document()?,
+    game: Arc::new(Mutex::new(None)),
+  };
 
-  let my_uuid = UUID::random();
-  let join = Join {
-    uuid: my_uuid,
+  let join = JoinRequest::JoinAsPlayer {
     name,
     preferred_color: Color::random(),
   };
-  let game_tx = create_websocket_and_listen(wrapper_wrapper.clone(), join)?;
-  let wrapper = GameWrapper {
-    canvas: Canvas::find_in_document()?,
-    game: Arc::new(Mutex::new(GameAsPlayer::new(my_uuid, game_tx))),
-  };
-  {
-    let mut wrapped = wrapper_wrapper.lock().unwrap();
-    *wrapped = Some(wrapper.game.clone());
-  }
+  create_websocket_and_listen(wrapper.game.clone(), join)?;
   Ok(wrapper)
 }

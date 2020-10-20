@@ -181,10 +181,6 @@ impl GameAsPlayer {
     Ok(())
   }
 
-  pub fn connected(&mut self, join: Join) -> Result<(), String> {
-    self.socket.send(&ClientToServerMessage::Join(join))
-  }
-
   pub fn disconnected(&mut self) -> Result<(), String> {
     match self.state.status {
       GameStatus::Won(_) => (), // do nothing, this is expected
@@ -198,6 +194,11 @@ impl GameAsPlayer {
       return Ok(()); // Nothing more to say. Refresh for a new game!
     }
     match message {
+      ServerToClientMessage::Welcome {
+        connection_id: uuid,
+      } => {
+        self.my_uuid = uuid;
+      }
       ServerToClientMessage::Snapshot(Snapshot {
         status,
         bodies,

@@ -2,7 +2,7 @@ use crate::*;
 use rust_us_core::ClientToServerMessage;
 use rust_us_core::GameAsPlayer;
 use rust_us_core::GameTx;
-use rust_us_core::Join;
+use rust_us_core::JoinRequest;
 use rust_us_core::ServerToClientMessage;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -57,12 +57,13 @@ fn get_websocket_url() -> Result<String, JsValue> {
 
 // Creates a websocket and hooks it up to the callbacks on the given GameAsPlayer.
 pub fn create_websocket_and_listen(
-  game_as_player: Arc<Mutex<Option<Arc<Mutex<GameAsPlayer>>>>>,
-  join: Join,
-) -> Result<Box<dyn GameTx>, JsValue> {
+  game_as_player: Arc<Mutex<Option<GameAsPlayer>>>,
+  join: JoinRequest,
+) -> Result<(), JsValue> {
   let ws = WebSocket::new(&get_websocket_url()?)?;
 
   let game_as_player_clone = game_as_player.clone();
+  let ws_clone = ws.clone();
   let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
     // Starting with assuming text messages. Can make efficient later (bson?).
     if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
@@ -74,9 +75,20 @@ pub fn create_websocket_and_listen(
           return;
         }
       };
-      let option_wrapped = &game_as_player_clone.lock().unwrap();
-      let wrapper = option_wrapped.as_ref().unwrap();
-      let mut game_as_player = wrapper.lock().unwrap();
+      if let ServerToClientMessage::Welcome {
+        connection_id: uuid,
+      } = message
+      {
+        let clone = &game_as_player_clone.clone();
+        let mut wrapped = clone.lock().unwrap();
+        *wrapped = Some(GameAsPlayer::new(
+          uuid,
+          Box::new(WebSocketTx::new(ws_clone.clone())),
+        ));
+      }
+      let clone = &game_as_player_clone.clone();
+      let mut option_wrapped = clone.lock().unwrap();
+      let game_as_player = option_wrapped.as_mut().unwrap();
       match game_as_player.handle_msg(message) {
         Ok(()) => (),
         Err(e) => {
@@ -98,32 +110,24 @@ pub fn create_websocket_and_listen(
   ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
   onerror_callback.forget();
 
-  let game_as_player_clone = game_as_player.clone();
   let onclose_callback = Closure::wrap(Box::new(move |_| {
     console_log!("websocket closed");
-    let option_wrapped = &game_as_player_clone.lock().unwrap();
-    let wrapper = option_wrapped.as_ref().unwrap();
-    let mut game = wrapper.lock().unwrap();
-    game
+    let mut option_wrapped = game_as_player.lock().unwrap();
+    let game_as_player = option_wrapped.as_mut().unwrap();
+    game_as_player
       .disconnected()
       .expect("Game failed to handle disconnection");
   }) as Box<dyn FnMut(ErrorEvent)>);
   ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
   onclose_callback.forget();
 
-  // TODO: wait on socket to connect before returning.
-
+  let ws_clone = ws.clone();
   let onopen_callback = Closure::wrap(Box::new(move |_| {
     console_log!("socket opened");
-    let option_wrapped = &game_as_player.lock().unwrap();
-    let wrapper = &option_wrapped.as_ref().unwrap();
-    let mut game_as_player = wrapper.lock().unwrap();
-    let join = join.clone();
-    game_as_player
-      .connected(join)
-      .expect("Could not handle game.connected()");
+    let tx = Box::new(WebSocketTx::new(ws_clone.clone()));
+    tx.send(&ClientToServerMessage::Join(join.clone())).unwrap();
   }) as Box<dyn FnMut(JsValue)>);
   ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
   onopen_callback.forget();
-  Ok(Box::new(WebSocketTx::new(ws)))
+  Ok(())
 }

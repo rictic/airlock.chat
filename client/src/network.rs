@@ -1,4 +1,5 @@
 use crate::*;
+use rust_us_core::get_version_sha;
 use rust_us_core::ClientToServerMessage;
 use rust_us_core::GameAsPlayer;
 use rust_us_core::GameTx;
@@ -125,7 +126,11 @@ pub fn create_websocket_and_listen(
   let onopen_callback = Closure::wrap(Box::new(move |_| {
     console_log!("socket opened");
     let tx = Box::new(WebSocketTx::new(ws_clone.clone()));
-    tx.send(&ClientToServerMessage::Join(join.clone())).unwrap();
+    tx.send(&ClientToServerMessage::Join {
+      version: get_version_sha().to_string(),
+      details: join.clone(),
+    })
+    .unwrap();
   }) as Box<dyn FnMut(JsValue)>);
   ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
   onopen_callback.forget();

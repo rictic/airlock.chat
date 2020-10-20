@@ -7,8 +7,13 @@ pub enum ClientToServerMessage {
   Move(MoveMessage),
   Killed(DeadBody),
   FinishedTask(FinishedTask),
-  Join(JoinRequest),
-  Vote { target: VoteTarget },
+  Join {
+    version: String,
+    details: JoinRequest,
+  },
+  Vote {
+    target: VoteTarget,
+  },
   StartGame(),
 }
 
@@ -19,7 +24,7 @@ impl ClientToServerMessage {
       ClientToServerMessage::Move(_) => "Move",
       ClientToServerMessage::Killed(_) => "Killed",
       ClientToServerMessage::FinishedTask(_) => "FinishedTask",
-      ClientToServerMessage::Join(_) => "Join",
+      ClientToServerMessage::Join { .. } => "Join",
       ClientToServerMessage::StartGame() => "StartGame",
       ClientToServerMessage::Vote { .. } => "Vote",
     }
@@ -49,6 +54,10 @@ impl ServerToClientMessage {
       ServerToClientMessage::Snapshot(_) => "Snapshot",
     }
   }
+}
+
+pub fn get_version_sha() -> &'static str {
+  env!("VERGEN_SHA")
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]

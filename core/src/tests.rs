@@ -147,10 +147,10 @@ impl TestEnvironment {
     let id = self.create_player();
     self.game_server.handle_message(
       id,
-      ClientToServerMessage::Join(JoinRequest::JoinAsPlayer {
+      ClientToServerMessage::Join{ version: get_version_sha().to_string(), details: JoinRequest::JoinAsPlayer {
         name: "Test Player".to_string(),
         preferred_color: Color::random(),
-      }),
+      }},
     )?;
     self.dispatch_messages()?;
     self.expect_everyone_agrees_on_game_state(player_count + 1)?;

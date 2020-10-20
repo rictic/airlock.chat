@@ -11,11 +11,15 @@
 		},
 		{
 			"path": "."
-		},
+		}
 	],
 	"settings": {
 		"files.exclude": {
-			"target/**": true
+			"**/Cargo.lock": true,
+			"**/pkg/**": true,
+			"**/dist/**": true,
+			"**/target/**": true,
+			"**/node_modules/**": true
 		}
 	}
 }

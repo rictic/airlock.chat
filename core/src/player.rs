@@ -204,7 +204,7 @@ impl GameAsPlayer {
         bodies,
         players,
       }) => {
-        println!("{:?} received snapshot.", self.my_uuid);
+        console_log!("{:?} received snapshot.", self.my_uuid);
         self.state.status = status;
         self.state.bodies = bodies;
         // handle disconnections

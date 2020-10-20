@@ -91,30 +91,30 @@ impl TestEnvironment {
           messages_local.clear();
         }
         for message in messages {
-          println!("Passing {} to server from {}", message.kind(), uuid);
+          console_log!("Passing {} to server from {}", message.kind(), uuid);
           self.game_server.handle_message(*uuid, message)?;
         }
       }
       let mut queue = self.server_to_client_queue.lock().unwrap();
-      println!(
+      console_log!(
         "Processing {} players in server_to_client_queue",
         queue.len()
       );
       for (uuid, messages) in queue.iter_mut() {
         if messages.is_empty() {
-          println!("Messages to {} are empty", uuid);
+          console_log!("Messages to {} are empty", uuid);
           continue;
         }
         keep_going = true;
         let messages_local = messages.clone();
         for message in messages_local {
-          println!("Passing {} from server to {}", message.kind(), uuid);
+          console_log!("Passing {} from server to {}", message.kind(), uuid);
           let player = self.players.get_mut(uuid).unwrap();
           player.handle_msg(message)?;
         }
         messages.clear();
       }
-      println!(
+      console_log!(
         "Finished one loop of dispatch_messages. Keep going? {}",
         keep_going
       );
@@ -167,12 +167,12 @@ struct TestBroadcaster {
 }
 impl Broadcaster for TestBroadcaster {
   fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
-    println!("Broadcasting {} from server", message.kind());
+    console_log!("Broadcasting {} from server", message.kind());
     let mut players = self.players.lock().unwrap();
     for (_uuid, messages) in players.iter_mut() {
       messages.push(message.clone());
     }
-    println!("Broadcast complete");
+    console_log!("Broadcast complete");
     Ok(())
   }
   fn send_to_player(
@@ -180,7 +180,7 @@ impl Broadcaster for TestBroadcaster {
     uuid: &UUID,
     message: &ServerToClientMessage,
   ) -> Result<(), Box<dyn Error>> {
-    println!("Sending {} to player {} from server", message.kind(), uuid);
+    console_log!("Sending {} to player {} from server", message.kind(), uuid);
     let mut players = self.players.lock().unwrap();
     if let Some(messages) = players.get_mut(uuid) {
       messages.push(message.clone());

@@ -45,13 +45,14 @@ impl GameServer {
     message: ClientToServerMessage,
   ) -> Result<(), Box<dyn Error>> {
     self.last_message_received_at = Instant::now();
-    println!("Game server handling {:?}", message);
+    console_log!("Game server handling {:?}", message);
     match message {
       ClientToServerMessage::StartGame() => {
         if self.state.status != GameStatus::Lobby {
-          print!(
+          console_log!(
             "Player {} tried to start a game from state {:?}",
-            sender, self.state.status
+            sender,
+            self.state.status
           );
           return Ok(());
         }

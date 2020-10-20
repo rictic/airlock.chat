@@ -1,10 +1,9 @@
 use crate::*;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 // The state of user input at some point in time. i.e. what buttons is
 // the user holding down?
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct InputState {
   pub up: bool,
   pub down: bool,
@@ -33,16 +32,7 @@ impl GameAsPlayer {
   pub fn new(uuid: UUID, socket: Box<dyn GameTx>) -> GameAsPlayer {
     GameAsPlayer {
       state: GameState::new(),
-      inputs: InputState {
-        up: false,
-        down: false,
-        left: false,
-        right: false,
-        kill: false,
-        activate: false,
-        report: false,
-        play: false,
-      },
+      inputs: InputState::default(),
       my_uuid: uuid,
       socket,
     }

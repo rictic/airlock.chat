@@ -239,12 +239,7 @@ fn test_movement() -> Result<(), Box<dyn Error>> {
   p1_client.take_input(InputState {
     up: true,
     left: true,
-    right: false,
-    down: false,
-    activate: false,
-    kill: false,
-    play: false,
-    report: false,
+    ..InputState::default()
   })?;
   let p1_position = p1_client.local_player().unwrap().position;
 
@@ -260,14 +255,9 @@ fn test_movement() -> Result<(), Box<dyn Error>> {
   // Move p3 down and right
   let p3_client = env.players.get_mut(&player3_id).unwrap();
   p3_client.take_input(InputState {
-    up: false,
-    left: false,
     right: true,
     down: true,
-    activate: false,
-    kill: false,
-    play: false,
-    report: false,
+    ..InputState::default()
   })?;
   let p3_position = p3_client.local_player().unwrap().position;
 

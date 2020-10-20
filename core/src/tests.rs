@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[test]
 fn pythagoras_was_right() {
@@ -135,7 +136,7 @@ impl TestEnvironment {
     Ok(server_state)
   }
 
-  fn time_passes(&mut self, elapsed: f64) {
+  fn time_passes(&mut self, elapsed: Duration) {
     self.game_server.state.simulate(elapsed);
     for (_, player) in self.players.iter_mut() {
       player.state.simulate(elapsed);
@@ -147,10 +148,13 @@ impl TestEnvironment {
     let id = self.create_player();
     self.game_server.handle_message(
       id,
-      ClientToServerMessage::Join{ version: get_version_sha().to_string(), details: JoinRequest::JoinAsPlayer {
-        name: "Test Player".to_string(),
-        preferred_color: Color::random(),
-      }},
+      ClientToServerMessage::Join {
+        version: get_version_sha().to_string(),
+        details: JoinRequest::JoinAsPlayer {
+          name: "Test Player".to_string(),
+          preferred_color: Color::random(),
+        },
+      },
     )?;
     self.dispatch_messages()?;
     self.expect_everyone_agrees_on_game_state(player_count + 1)?;
@@ -269,7 +273,7 @@ fn test_movement() -> Result<(), Box<dyn Error>> {
 
   // Let four time ticks pass
   env.dispatch_messages()?;
-  env.time_passes(64.0);
+  env.time_passes(Duration::from_millis(64));
 
   let player_positions: HashMap<UUID, Position> = env
     .game_server

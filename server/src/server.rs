@@ -98,7 +98,7 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>, room: Room) {
     let mut game_server = game_server.lock().unwrap();
     // The server wants to disconnect the players (e.g. timeout),
     // so close all the connections.
-    let finished = game_server.simulate(elapsed.as_millis() as f64);
+    let finished = game_server.simulate(elapsed);
     if finished {
       println!("Game finished, done simulating it on the server.");
       let mut room = room.lock().unwrap();

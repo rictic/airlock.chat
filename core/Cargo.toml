@@ -12,6 +12,7 @@ serde_json = "1.0.57"
 serde = { version = "1.0.116", features = ["derive"] }
 rand = { version = "0.7.3", features = ["wasm-bindgen"] }
 js-sys = "0.3.45"
+instant = {version = "0.1.7", features = ["wasm-bindgen"] }
 
 [build-dependencies]
 vergen = "3"

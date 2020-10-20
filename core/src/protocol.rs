@@ -1,7 +1,6 @@
 use crate::*;
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientToServerMessage {
@@ -91,46 +90,7 @@ pub struct Disconnected {
   pub uuid: UUID,
 }
 
-#[derive(Debug, Clone)]
-pub enum MaybeDecisionIfPlayingBackRecording {
-  LiveGame,
-  Playback(Option<ServerDecision>),
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RecordedGame {
-  // The version of the software this was recorded with.
-  pub version: String,
-  pub entries: Vec<RecordingEntry>,
-}
-impl RecordedGame {
-  pub fn new(entries: Vec<RecordingEntry>) -> Self {
-    Self {
-      version: get_version_sha().to_string(),
-      entries,
-    }
-  }
-}
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RecordingEntry {
-  pub since_start: Duration,
-  pub event: RecordingEvent,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum RecordingEvent {
-  Message(PlaybackMessage),
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PlaybackMessage {
-  pub sender: UUID,
-  pub message: ClientToServerMessage,
-  pub decision: Option<ServerDecision>,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ServerDecision {
-  StartInfo(StartInfo),
-  NewPlayerPosition(Position),
-}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PlayerStartInfo {
   pub team: Team,

@@ -49,7 +49,7 @@ impl GameState {
     }
   }
 
-  pub fn simulate(&mut self, elapsed: f64) -> bool {
+  pub fn simulate(&mut self, elapsed: Duration) -> bool {
     self.status.progress_time(elapsed);
     match &self.status {
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.simulate_day(elapsed),
@@ -89,13 +89,14 @@ impl GameState {
       .all(|(uuid, _)| day_state.votes.contains_key(uuid))
   }
 
-  fn simulate_day(&mut self, elapsed: f64) {
+  fn simulate_day(&mut self, elapsed: Duration) {
     // elapsed is the time, in milliseconds, that has passed since the
     // last time we simulated.
     // By making our simulations relative to the amount of time that's passed,
     // the game will progress the same regardless of the frame rate, which may
     // vary between 30fps and 144fps even if our performance is perfect!
-    let time_steps_passed = elapsed / 16.0;
+    let time_steps_passed =
+      (elapsed.as_nanos() as f64) / (Duration::from_millis(16).as_nanos() as f64);
 
     for (_, player) in self.players.iter_mut() {
       let Speed { dx, dy } = player.speed;
@@ -380,9 +381,12 @@ pub enum GameStatus {
 }
 
 impl GameStatus {
-  pub fn progress_time(&mut self, elapsed: f64) {
+  pub fn progress_time(&mut self, elapsed: Duration) {
     if let GameStatus::Playing(PlayState::Day(day_state)) = self {
-      day_state.time_remaining -= Duration::from_nanos((elapsed * 1000.0 * 1000.0) as u64);
+      day_state.time_remaining = day_state
+        .time_remaining
+        .checked_sub(elapsed)
+        .unwrap_or_else(|| Duration::from_secs(0));
     }
   }
 }

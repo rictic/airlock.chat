@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[test]
 fn pythagoras_was_right() {
@@ -90,30 +91,30 @@ impl TestEnvironment {
           messages_local.clear();
         }
         for message in messages {
-          println!("Passing {} to server from {}", message.kind(), uuid);
+          console_log!("Passing {} to server from {}", message.kind(), uuid);
           self.game_server.handle_message(*uuid, message)?;
         }
       }
       let mut queue = self.server_to_client_queue.lock().unwrap();
-      println!(
+      console_log!(
         "Processing {} players in server_to_client_queue",
         queue.len()
       );
       for (uuid, messages) in queue.iter_mut() {
         if messages.is_empty() {
-          println!("Messages to {} are empty", uuid);
+          console_log!("Messages to {} are empty", uuid);
           continue;
         }
         keep_going = true;
         let messages_local = messages.clone();
         for message in messages_local {
-          println!("Passing {} from server to {}", message.kind(), uuid);
+          console_log!("Passing {} from server to {}", message.kind(), uuid);
           let player = self.players.get_mut(uuid).unwrap();
           player.handle_msg(message)?;
         }
         messages.clear();
       }
-      println!(
+      console_log!(
         "Finished one loop of dispatch_messages. Keep going? {}",
         keep_going
       );
@@ -135,7 +136,7 @@ impl TestEnvironment {
     Ok(server_state)
   }
 
-  fn time_passes(&mut self, elapsed: f64) {
+  fn time_passes(&mut self, elapsed: Duration) {
     self.game_server.state.simulate(elapsed);
     for (_, player) in self.players.iter_mut() {
       player.state.simulate(elapsed);
@@ -147,10 +148,13 @@ impl TestEnvironment {
     let id = self.create_player();
     self.game_server.handle_message(
       id,
-      ClientToServerMessage::Join{ version: get_version_sha().to_string(), details: JoinRequest::JoinAsPlayer {
-        name: "Test Player".to_string(),
-        preferred_color: Color::random(),
-      }},
+      ClientToServerMessage::Join {
+        version: get_version_sha().to_string(),
+        details: JoinRequest::JoinAsPlayer {
+          name: "Test Player".to_string(),
+          preferred_color: Color::random(),
+        },
+      },
     )?;
     self.dispatch_messages()?;
     self.expect_everyone_agrees_on_game_state(player_count + 1)?;
@@ -163,12 +167,12 @@ struct TestBroadcaster {
 }
 impl Broadcaster for TestBroadcaster {
   fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
-    println!("Broadcasting {} from server", message.kind());
+    console_log!("Broadcasting {} from server", message.kind());
     let mut players = self.players.lock().unwrap();
     for (_uuid, messages) in players.iter_mut() {
       messages.push(message.clone());
     }
-    println!("Broadcast complete");
+    console_log!("Broadcast complete");
     Ok(())
   }
   fn send_to_player(
@@ -176,7 +180,7 @@ impl Broadcaster for TestBroadcaster {
     uuid: &UUID,
     message: &ServerToClientMessage,
   ) -> Result<(), Box<dyn Error>> {
-    println!("Sending {} to player {} from server", message.kind(), uuid);
+    console_log!("Sending {} to player {} from server", message.kind(), uuid);
     let mut players = self.players.lock().unwrap();
     if let Some(messages) = players.get_mut(uuid) {
       messages.push(message.clone());
@@ -235,12 +239,7 @@ fn test_movement() -> Result<(), Box<dyn Error>> {
   p1_client.take_input(InputState {
     up: true,
     left: true,
-    right: false,
-    down: false,
-    activate: false,
-    kill: false,
-    play: false,
-    report: false,
+    ..InputState::default()
   })?;
   let p1_position = p1_client.local_player().unwrap().position;
 
@@ -256,20 +255,15 @@ fn test_movement() -> Result<(), Box<dyn Error>> {
   // Move p3 down and right
   let p3_client = env.players.get_mut(&player3_id).unwrap();
   p3_client.take_input(InputState {
-    up: false,
-    left: false,
     right: true,
     down: true,
-    activate: false,
-    kill: false,
-    play: false,
-    report: false,
+    ..InputState::default()
   })?;
   let p3_position = p3_client.local_player().unwrap().position;
 
   // Let four time ticks pass
   env.dispatch_messages()?;
-  env.time_passes(64.0);
+  env.time_passes(Duration::from_millis(64));
 
   let player_positions: HashMap<UUID, Position> = env
     .game_server

@@ -1,7 +1,7 @@
 use crate::canvas::*;
 use crate::network::create_websocket_and_listen;
+use instant::Instant;
 use rust_us_core::*;
-use std::f64;
 use std::sync::Arc;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
@@ -16,6 +16,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[wasm_bindgen]
 pub struct GameWrapper {
   canvas: Canvas,
+  previous_frame_time: Instant,
   game: Arc<Mutex<Option<GameAsPlayer>>>,
 }
 
@@ -58,7 +59,7 @@ impl GameWrapper {
       .map_err(JsValue::from)
   }
 
-  pub fn simulate(&mut self, elapsed: f64) -> Result<bool, JsValue> {
+  pub fn simulate(&mut self) -> Result<bool, JsValue> {
     let mut game = self
       .game
       .lock()
@@ -67,6 +68,9 @@ impl GameWrapper {
       return Ok(false);
     }
     let game = game.as_mut().unwrap();
+    let now = Instant::now();
+    let elapsed = now - self.previous_frame_time;
+    self.previous_frame_time = now;
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
     }
@@ -135,6 +139,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   // So here we are.
   let wrapper = GameWrapper {
     canvas: Canvas::find_in_document()?,
+    previous_frame_time: Instant::now(),
     game: Arc::new(Mutex::new(None)),
   };
 

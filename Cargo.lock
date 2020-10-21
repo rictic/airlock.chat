@@ -194,6 +194,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "instant",
  "js-sys",
  "rand 0.7.3",
  "rust_us_core",
@@ -632,6 +633,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19a8a95243d5a0398cae618ec29477c6e3cb631152be5c19481f80bc71559754"
 dependencies = [
  "bytes",
+]
+
+[[package]]
+name = "instant"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63312a18f7ea8760cdd0a7c5aac1a619752a246b833545e3e36d1f81f7cd9e66"
+dependencies = [
+ "cfg-if",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -1186,11 +1199,13 @@ dependencies = [
 name = "rust_us_core"
 version = "0.1.0"
 dependencies = [
+ "instant",
  "js-sys",
  "rand 0.7.3",
  "serde",
  "serde_json",
  "vergen",
+ "wasm-bindgen",
 ]
 
 [[package]]

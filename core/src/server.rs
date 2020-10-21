@@ -2,8 +2,9 @@ use crate::*;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::time::Duration;
 
-use std::time::Instant;
+use instant::Instant;
 
 // Implements logic for a game server without knowing about the transport layer.
 // Useful so that we can implement a real game server with web sockets, and the test
@@ -23,7 +24,7 @@ impl GameServer {
     }
   }
 
-  pub fn simulate(&mut self, elapsed: f64) -> bool {
+  pub fn simulate(&mut self, elapsed: Duration) -> bool {
     let timeout_duration = std::time::Duration::from_secs(15 * /* minutes */60);
     let timed_out = self.last_message_received_at.elapsed() > timeout_duration;
     if self.state.status != GameStatus::Connecting && timed_out {
@@ -44,13 +45,14 @@ impl GameServer {
     message: ClientToServerMessage,
   ) -> Result<(), Box<dyn Error>> {
     self.last_message_received_at = Instant::now();
-    println!("Game server handling {:?}", message);
+    console_log!("Game server handling {:?}", message);
     match message {
       ClientToServerMessage::StartGame() => {
         if self.state.status != GameStatus::Lobby {
-          print!(
+          console_log!(
             "Player {} tried to start a game from state {:?}",
-            sender, self.state.status
+            sender,
+            self.state.status
           );
           return Ok(());
         }
@@ -72,7 +74,10 @@ impl GameServer {
         }
         self.broadcast_snapshot()?;
       }
-      ClientToServerMessage::Join{version, details: join} => {
+      ClientToServerMessage::Join {
+        version,
+        details: join,
+      } => {
         if version != get_version_sha() {
           // TODO: send an error and close the connection.
           return Ok(());

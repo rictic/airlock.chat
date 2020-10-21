@@ -1,4 +1,4 @@
-use crate::*;
+use rust_us_core::console_log;
 use rust_us_core::get_version_sha;
 use rust_us_core::ClientToServerMessage;
 use rust_us_core::GameAsPlayer;

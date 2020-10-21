@@ -49,7 +49,7 @@ async function init() {
     const timestamp = performance.now();
     const elapsed = timestamp - previousFrameTime;
     previousFrameTime = timestamp;
-    const finished = game.simulate(elapsed);
+    const finished = game.simulate();
     const afterSim = performance.now();
     const simTime = afterSim - timestamp;
     game.draw();

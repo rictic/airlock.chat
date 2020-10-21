@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "webpack --config webpack.config.js",
-    "start": "webpack-dev-server"
+    "start": "wds --watch"
   },
   "repository": {
     "type": "git",
@@ -30,10 +30,8 @@
     "rust-us": "file:../client/pkg"
   },
   "devDependencies": {
+    "@web/dev-server": "0.0.15",
     "copy-webpack-plugin": "^5.0.0",
-    "hello-wasm-pack": "^0.1.0",
-    "webpack": "^4.29.3",
-    "webpack-cli": "^3.1.0",
-    "webpack-dev-server": "^3.11.0"
+    "hello-wasm-pack": "^0.1.0"
   }
 }

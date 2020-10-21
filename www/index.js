@@ -1,4 +1,4 @@
-import * as wasm from '../client/pkg/client';
+import initWasm, * as wasm from './wasm/client.js';
 
 async function getName() {
   const input = document.createElement('input');
@@ -18,6 +18,7 @@ async function getName() {
 }
 
 async function init() {
+  await initWasm();
   let name = window.localStorage.getItem('name');
   if (typeof name !== 'string') {
     name = await getName();
@@ -94,9 +95,9 @@ async function init() {
   }
 
   const knownButtons = new Set([
-      'w', 'a', 's', 'd', 'q', 'e', 'r', ' ', 'p',
-      'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
-      'j', 'k', 'l'
+    'w', 'a', 's', 'd', 'q', 'e', 'r', ' ', 'p',
+    'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
+    'j', 'k', 'l'
   ]);
   const heldButtons = {};
   for (const button of knownButtons) {
@@ -115,8 +116,8 @@ async function init() {
     const skip_forward = heldButtons['l'];
     const pause_playback = heldButtons['k'];
     game.set_inputs(
-        up, down, left, right, kill, report,
-        activate, play, skip_back, skip_forward, pause_playback);
+      up, down, left, right, kill, report,
+      activate, play, skip_back, skip_forward, pause_playback);
     if (!running) {
       running = true;
       requestAnimationFrame(drawOneFrame);

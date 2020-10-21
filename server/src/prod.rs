@@ -32,7 +32,7 @@ Also this server must be run from the server directory."
   let fileserver = warp::fs::dir(path).with(warp::compression::gzip());
 
   // Define the websocket server
-  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)));
+  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)?));
   let gameserver = warp::any().map(move || gameserver.clone());
   let websocket_server = warp::ws()
     .and(gameserver)

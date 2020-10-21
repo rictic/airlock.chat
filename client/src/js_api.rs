@@ -232,8 +232,9 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
       recording.version,
       get_version_sha()
     );
+    let game_id = recording.game_id;
     let connection = Box::new(PlaybackTx {});
-    let mut game_as_player = GameAsPlayer::new(UUID::random(), connection);
+    let mut game_as_player = GameAsPlayer::new(UUID::random(), game_id, connection);
     game_as_player.state.status = GameStatus::Lobby;
     wrapper = GameWrapper {
       previous_frame_time: Instant::now(),

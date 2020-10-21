@@ -38,7 +38,7 @@ impl ClientToServerMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerToClientMessage {
-  Welcome { connection_id: UUID },
+  Welcome { connection_id: UUID, game_id: UUID },
   Snapshot(Snapshot),
   Replay(RecordedGame),
   DisplayMessage(DisplayMessage),

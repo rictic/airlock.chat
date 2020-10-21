@@ -1,3 +1,4 @@
+use crate::replay::GameRecordingWriter;
 use crate::replay::MaybeDecisionIfPlayingBackRecording::*;
 use crate::replay::{RecordingEntry, RecordingEvent};
 use crate::*;
@@ -5,6 +6,7 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::io::Write;
 use std::time::Duration;
 
 use instant::Instant;
@@ -22,24 +24,37 @@ pub trait Broadcaster: Send {
 // Useful so that we can implement a real game server with web sockets, and the test
 // game server, and potentially a future peer to peer in-client server.
 pub struct GameServer {
+  pub game_id: UUID,
   pub version: String,
   pub state: GameState,
   start_time: Instant,
   last_message_received_at: Instant,
   broadcaster: Box<dyn Broadcaster>,
   recording: Option<Vec<RecordingEntry>>,
+  replay_writer: Option<GameRecordingWriter<Box<dyn Write + Send>>>,
 }
 
 impl GameServer {
-  pub fn new(broadcaster: Box<dyn Broadcaster>, record_game: bool) -> Self {
+  pub fn new(
+    game_id: UUID,
+    broadcaster: Box<dyn Broadcaster>,
+    replay_writer: Option<GameRecordingWriter<Box<dyn Write + Send>>>,
+  ) -> Self {
     let now = Instant::now();
+    let recording = if replay_writer.is_some() {
+      Some(Vec::new())
+    } else {
+      None
+    };
     Self {
+      game_id,
       version: get_version_sha().to_string(),
       state: GameState::new(),
       start_time: now,
       last_message_received_at: now,
       broadcaster,
-      recording: if record_game { Some(Vec::new()) } else { None },
+      recording,
+      replay_writer,
     }
   }
 
@@ -54,7 +69,7 @@ impl GameServer {
       console_log!("Game won, trying to transmit save game");
       if let Some(recording) = &self.recording {
         console_log!("Recording exists, transmitting...");
-        let replay = &ServerToClientMessage::Replay(RecordedGame::new(recording.to_vec()));
+        let replay = &ServerToClientMessage::Replay(RecordedGame::new(self.game_id, recording.to_vec()));
         match self.broadcaster.broadcast(replay) {
           Ok(()) => console_log!("Transmit successful!"),
           Err(e) => console_log!("Error broadcasting replay: {}", e),
@@ -74,7 +89,7 @@ impl GameServer {
   }
 
   pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
-    self.record_event(&RecordingEvent::Disconnect(disconnected_player));
+    self.record_event(&RecordingEvent::Disconnect(disconnected_player))?;
     if let Some(player) = self.state.players.get(&disconnected_player) {
       self
         .broadcaster
@@ -108,7 +123,7 @@ impl GameServer {
       sender,
       message,
       decision,
-    }));
+    }))?;
     Ok(())
   }
 
@@ -362,6 +377,7 @@ impl GameServer {
           &sender,
           &ServerToClientMessage::Welcome {
             connection_id: sender,
+            game_id: self.game_id,
           },
         )?;
         self.broadcaster.send_to_player(
@@ -422,15 +438,17 @@ impl GameServer {
     }
   }
 
-  fn record_event(&mut self, event: &RecordingEvent) {
-    let recording = match &mut self.recording {
-      None => return,
-      Some(r) => r,
-    };
-    recording.push(RecordingEntry {
-      since_start: self.start_time.elapsed(),
-      event: event.clone(),
-    });
+  fn record_event(&mut self, event: &RecordingEvent) -> Result<(), std::io::Error> {
+    if let Some(recording) = &mut self.recording {
+      recording.push(RecordingEntry {
+        since_start: self.start_time.elapsed(),
+        event: event.clone(),
+      });
+    }
+    if let Some(replay_writer) = &mut self.replay_writer {
+      replay_writer.write(event)?;
+    }
+    Ok(())
   }
 }
 

@@ -43,6 +43,7 @@ impl InputState {
 // A game from the perspective of a specific player
 pub struct GameAsPlayer {
   pub my_uuid: UUID,
+  pub game_id: UUID,
   inputs: InputState,
   pub state: GameState,
   pub socket: Box<dyn GameTx>,
@@ -52,12 +53,13 @@ pub struct GameAsPlayer {
 
 // A game from the perspective of a particular player.
 impl GameAsPlayer {
-  pub fn new(uuid: UUID, socket: Box<dyn GameTx>) -> GameAsPlayer {
+  pub fn new(connection_id: UUID, game_id: UUID, socket: Box<dyn GameTx>) -> GameAsPlayer {
     GameAsPlayer {
+      game_id,
       state: GameState::new(),
       inputs: InputState::default(),
       contextual_state: ContextualState::Blank,
-      my_uuid: uuid,
+      my_uuid: connection_id,
       socket,
       displayed_messages: Vec::new(),
     }
@@ -424,8 +426,10 @@ impl GameAsPlayer {
     match message {
       ServerToClientMessage::Welcome {
         connection_id: uuid,
+        game_id,
       } => {
         self.my_uuid = uuid;
+        self.game_id = game_id;
       }
       ServerToClientMessage::Snapshot(Snapshot {
         status,

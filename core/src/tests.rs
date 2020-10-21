@@ -24,10 +24,11 @@ impl TestEnvironment {
     let messages: Arc<Mutex<HashMap<UUID, Vec<ServerToClientMessage>>>> = Arc::default();
     TestEnvironment {
       game_server: GameServer::new(
+        UUID::random(),
         Box::new(TestBroadcaster {
           players: messages.clone(),
         }),
-        true,
+        None,
       ),
       server_to_client_queue: messages,
       players: HashMap::default(),
@@ -41,6 +42,7 @@ impl TestEnvironment {
     let queue: Arc<Mutex<Vec<ClientToServerMessage>>> = Arc::default();
     let player = GameAsPlayer::new(
       UUID::random(),
+      self.game_server.game_id,
       Box::new(TestPlayerTx {
         messages: queue.clone(),
       }),

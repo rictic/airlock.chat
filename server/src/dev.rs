@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     return Err(format!("Expected to find site_data dir at {:?}", site_data_path).into());
   }
   let addr: SocketAddr = ([0, 0, 0, 0], 3012).into();
-  let gameserver = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)));
+  let gameserver = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)?));
   let gameserver = warp::any().map(move || gameserver.clone());
   let websocket_server = warp::ws()
     .and(gameserver)

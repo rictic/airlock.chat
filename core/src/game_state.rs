@@ -576,7 +576,7 @@ impl Shape {
 // is different than the server, and I got a compiler error about it.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UUID {
-  v: [u8; 16],
+  pub v: [u8; 16],
 }
 
 // Display UUIDs as hex

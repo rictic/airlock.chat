@@ -89,13 +89,15 @@ pub fn create_websocket_and_listen(
       return;
     }
     if let ServerToClientMessage::Welcome {
-      connection_id: uuid,
+      connection_id,
+      game_id,
     } = message
     {
       let clone = &game_as_player_clone.clone();
       let mut wrapped = clone.lock().unwrap();
       *wrapped = Some(GameAsPlayer::new(
-        uuid,
+        connection_id,
+        game_id,
         Box::new(WebSocketTx::new(ws_clone.clone())),
       ));
     }

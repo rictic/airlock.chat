@@ -1,8 +1,9 @@
 use futures_channel::mpsc::{unbounded, UnboundedSender};
 use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
-use rust_us_core::ServerToClientMessage;
+use rust_us_core::{get_version_sha, GameRecordingWriter, ServerToClientMessage};
 use rust_us_core::{Broadcaster, ClientToServerMessage, GameServer, GameStatus, UUID};
 use std::error::Error;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -19,25 +20,38 @@ type Room = Arc<Mutex<HashMap<UUID, Tx>>>;
 pub struct WebsocketServer {
   room: Room,
   game_server: Arc<Mutex<GameServer>>,
+  replay_dir: PathBuf,
   site_data_path: PathBuf,
 }
 
 impl WebsocketServer {
-  pub fn new(site_data_path: PathBuf) -> Self {
+  pub fn new(site_data_path: PathBuf) -> Result<Self, Box<dyn Error>> {
+    let game_id = UUID::random();
     let room = Room::default();
+    let replay_dir =
+      site_data_path.join(format!("replays/{:0x}/{:0x}", game_id.v[0], game_id.v[1]));
+    if !replay_dir.exists() {
+      std::fs::create_dir_all(&replay_dir)?;
+    }
+    let replay_path = replay_dir.join(format!("{}.airlockreplay", game_id));
+    let replay_file = std::fs::File::create(replay_path)?;
+    let inner_writer: std::boxed::Box<dyn std::io::Write + std::marker::Send> =
+      Box::new(replay_file);
+    let writer = GameRecordingWriter::new(inner_writer, get_version_sha(), game_id)?;
+
     let game_server = Arc::new(Mutex::new(GameServer::new(
+      game_id,
       Box::new(BroadCastServer { room: room.clone() }),
-      true,
+      Some(writer),
     )));
-    WebsocketServer {
+    Ok(WebsocketServer {
       room,
       game_server,
+      replay_dir,
       site_data_path,
-    }
+    })
   }
 }
-
-impl WebsocketServer {}
 
 struct BroadCastServer {
   room: Room,
@@ -88,19 +102,31 @@ pub async fn client_connected(ws: WebSocket, ws_server: Arc<Mutex<WebsocketServe
     }
     if prev_game_finished {
       // The previous game is finished. Create a new game and direct future players to it.
-      let room = Room::default();
-      let broadcast_server = BroadCastServer { room: room.clone() };
+      let (room, game_server) = make_new_game(ws_server.replay_dir.as_path()).unwrap();
       ws_server.room = room;
-      ws_server.game_server = Arc::new(Mutex::new(GameServer::new(
-        Box::new(broadcast_server),
-        true,
-      )));
+      ws_server.game_server = game_server;
       println!("Starting a new game for the new client!");
     }
     game_server = ws_server.game_server.clone();
     room = ws_server.room.clone();
   }
   tokio::spawn(handle_connection(game_server, room, ws));
+}
+
+fn make_new_game(replay_dir: &Path) -> Result<(Room, Arc<Mutex<GameServer>>), Box<dyn Error>> {
+  let game_id = UUID::random();
+  let replay_path = replay_dir.join(format!("{}.airlockreplay", game_id));
+  let replay_file = std::fs::File::create(replay_path)?;
+  let inner_writer: std::boxed::Box<dyn std::io::Write + std::marker::Send> = Box::new(replay_file);
+  let writer = GameRecordingWriter::new(inner_writer, get_version_sha(), game_id)?;
+  let room = Room::default();
+  let broadcast_server = BroadCastServer { room: room.clone() };
+  let game_server = Arc::new(Mutex::new(GameServer::new(
+    UUID::random(),
+    Box::new(broadcast_server),
+    Some(writer),
+  )));
+  Ok((room, game_server))
 }
 
 async fn simulation_loop(game_server: Arc<Mutex<GameServer>>, room: Room) {

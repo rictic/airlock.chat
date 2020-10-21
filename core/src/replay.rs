@@ -3,6 +3,8 @@ use crate::*;
 use core::time::Duration;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::io::BufRead;
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -10,16 +12,110 @@ use std::sync::Mutex;
 pub struct RecordedGame {
   // The version of the software this was recorded with.
   pub version: String,
+  pub game_id: UUID,
   pub entries: Vec<RecordingEntry>,
 }
 impl RecordedGame {
-  pub fn new(entries: Vec<RecordingEntry>) -> Self {
+  pub fn new(game_id: UUID, entries: Vec<RecordingEntry>) -> Self {
     Self {
       version: get_version_sha().to_string(),
       entries,
+      game_id,
+    }
+  }
+
+  pub fn read(mut reader: impl BufRead) -> Result<RecordedGame, RecordingReadError> {
+    let header = RecordedGame::read_header(&mut reader)?;
+    // We promise the header line will be backwards compatible, but the rest
+    // of the file won't be. Can't go on unless the versions match.
+    if header.version != get_version_sha() {
+      return Err(RecordingReadError::VersionMismatch {
+        found: header.version,
+      });
+    }
+    let lines = reader.lines();
+    let mut entries = Vec::new();
+    for line in lines {
+      entries.push(serde_json::from_str(&line?)?);
+    }
+    Ok(RecordedGame {
+      version: header.version,
+      game_id: header.game_id,
+      entries,
+    })
+  }
+
+  pub fn read_header(reader: &mut impl BufRead) -> Result<ReplayFileHeader, RecordingReadError> {
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    // We expect the first line of a replay to be a json object with a field 'version' that's a string.
+    let header: ReplayFileHeader = serde_json::from_str(&line)?;
+    if header.file_type != "airlock replay" {
+      return Err(RecordingReadError::Err(
+        "Replay file did not have a file_type key with value \"airlock replay\"".into(),
+      ));
+    }
+    Ok(header)
+  }
+}
+pub enum RecordingReadError {
+  VersionMismatch { found: String },
+  Err(Box<dyn Error>),
+}
+impl std::convert::From<std::io::Error> for RecordingReadError {
+  fn from(err: std::io::Error) -> Self {
+    RecordingReadError::Err(err.into())
+  }
+}
+impl std::convert::From<serde_json::Error> for RecordingReadError {
+  fn from(err: serde_json::Error) -> Self {
+    RecordingReadError::Err(err.into())
+  }
+}
+pub struct GameRecordingWriter<W>
+where
+  W: Write,
+{
+  inner: W,
+}
+impl<W> GameRecordingWriter<W>
+where
+  W: Write,
+{
+  pub fn new(mut inner: W, version: &str, game_id: UUID) -> Result<Self, std::io::Error> {
+    let header = ReplayFileHeader::new(version.to_string(), game_id);
+    inner.write_all(serde_json::to_string(&header).unwrap().as_bytes())?;
+    inner.write_all(b"\n")?;
+    Ok(Self { inner })
+  }
+
+  pub fn write(&mut self, event: &RecordingEvent) -> Result<(), std::io::Error> {
+    self
+      .inner
+      .write_all(serde_json::to_string(&event).unwrap().as_bytes())?;
+    self.inner.write_all(b"\n")?;
+    Ok(())
+  }
+}
+
+// Unlike other parts of the protocol, we want this to be backwards and forwards
+// compatible.
+#[derive(Serialize, Deserialize)]
+pub struct ReplayFileHeader {
+  pub version: String,
+  pub game_id: UUID,
+  file_type: String,
+}
+impl ReplayFileHeader {
+  fn new(version: String, game_id: UUID) -> Self {
+    Self {
+      file_type: "airlock replay".to_string(),
+      version,
+      game_id,
     }
   }
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RecordingEntry {
   pub since_start: Duration,
@@ -81,10 +177,11 @@ impl PlaybackServer {
   pub fn new(recording: RecordedGame) -> Self {
     let pending_messages = Arc::new(Mutex::new(Vec::new()));
     let mut game_server = GameServer::new(
+      UUID::random(),
       Box::new(PlaybackBroadcaster {
         pending_messages: pending_messages.clone(),
       }),
-      false,
+      None,
     );
     game_server.version = recording.version.clone();
     game_server.state.status = GameStatus::Lobby;
@@ -100,10 +197,11 @@ impl PlaybackServer {
 
   pub fn restart(&mut self) {
     let mut game_server = GameServer::new(
+      self.game_server.game_id,
       Box::new(PlaybackBroadcaster {
         pending_messages: self.pending_messages.clone(),
       }),
-      false,
+      None,
     );
     game_server.version = self.recording.version.clone();
     game_server.state.status = GameStatus::Lobby;

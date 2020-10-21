@@ -48,7 +48,7 @@ fn get_websocket_url() -> Result<String, JsValue> {
     return Ok(format!("wss://{}/", hostname));
   }
 
-  if port == "8080" {
+  if port == "8000" {
     // we're in dev mode, use the dev mode port
     return Ok(format!("ws://{}:3012/", hostname));
   }

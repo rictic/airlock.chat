@@ -11,19 +11,18 @@ else
   (cd www && npm ci)
 fi
 
-# Build the client wasm binary
-(cd client && wasm-pack build --release)
-cd www
-# Start the webpack devserver
-npm run start &
-cd ..
+# Start the web devserver
+cd www/
+npx wds --watch --open >/dev/null &
+cd ../
 
 # Make sure cargo-watch is installed
 cargo install cargo-watch
 
 # Start the websocket server, and rebuild and relaunch it as necessary.
-cargo watch -x 'run -p server --bin dev' &
+cd server/
+cargo watch -x 'run --bin dev' -w src/ -w Cargo.toml -w ../core/src/ -w ../core/Cargo.toml &
 
 # Rebuild the client wasm binary each time the filesystem is changed.
-cd client
-cargo watch -s 'wasm-pack build --release' -w src/ -w Cargo.toml -w ../core/src/ -w ../core/Cargo.toml
+cd ../client
+cargo watch -s 'wasm-pack build --target web --dev && rm -rf ../www/wasm && cp -r ./pkg ../www/wasm' -w src/ -w Cargo.toml -w ../core/src/ -w ../core/Cargo.toml

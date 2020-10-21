@@ -5,11 +5,15 @@ else
 fi
 
 echo "Building client..."
-(cd client && wasm-pack build --release && cd ../www && npm run build)
-rm -rf server/dist/
-cp -r www/dist server/dist
+(cd client && wasm-pack build --release --target web && cd ../www && npm run build)
+
 echo "Client built, building the server..."
 cargo build --release
+
+rm -rf server/dist/
+mkdir server/dist
+cp -r www/*.html www/*.js www/wasm www/assets www/pwa_manifest.json server/dist/
+
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   echo "Running sudo setcap to allow prod server to bind to low ports"

@@ -13,6 +13,9 @@ pub struct InputState {
   pub activate: bool,
   pub report: bool,
   pub play: bool,
+  pub skip_back: bool,
+  pub skip_forward: bool,
+  pub pause_playback: bool,
 }
 
 // A game from the perspective of a specific player
@@ -20,7 +23,7 @@ pub struct GameAsPlayer {
   pub my_uuid: UUID,
   inputs: InputState,
   pub state: GameState,
-  socket: Box<dyn GameTx>,
+  pub socket: Box<dyn GameTx>,
 }
 
 pub trait GameTx {
@@ -45,6 +48,10 @@ impl GameAsPlayer {
 
   fn local_player_mut(&mut self) -> Option<&mut Player> {
     self.state.players.get_mut(&self.my_uuid)
+  }
+
+  pub fn inputs(&self) -> InputState {
+    self.inputs
   }
 
   // Take the given inputs from the local player
@@ -180,9 +187,7 @@ impl GameAsPlayer {
   }
 
   pub fn handle_msg(&mut self, message: ServerToClientMessage) -> Result<(), String> {
-    if self.state.status.finished() {
-      return Ok(()); // Nothing more to say. Refresh for a new game!
-    }
+    console_log!("Player handling message: {}", message.kind());
     match message {
       ServerToClientMessage::Welcome {
         connection_id: uuid,
@@ -194,7 +199,6 @@ impl GameAsPlayer {
         bodies,
         players,
       }) => {
-        console_log!("{:?} received snapshot.", self.my_uuid);
         self.state.status = status;
         self.state.bodies = bodies;
         // handle disconnections
@@ -237,6 +241,9 @@ impl GameAsPlayer {
             }
           }
         }
+      }
+      ServerToClientMessage::Replay(_recorded_game) => {
+        // Nothing to handle here. The JS client handles this itself.
       }
     }
     Ok(())

@@ -1,10 +1,10 @@
 #![cfg(test)]
 use crate::*;
+use core::time::Duration;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
 
 #[test]
 fn pythagoras_was_right() {
@@ -21,9 +21,12 @@ impl TestEnvironment {
   fn new() -> TestEnvironment {
     let messages: Arc<Mutex<HashMap<UUID, Vec<ServerToClientMessage>>>> = Arc::default();
     TestEnvironment {
-      game_server: GameServer::new(Box::new(TestBroadcaster {
-        players: messages.clone(),
-      })),
+      game_server: GameServer::new(
+        Box::new(TestBroadcaster {
+          players: messages.clone(),
+        }),
+        true,
+      ),
       server_to_client_queue: messages,
       players: HashMap::default(),
       player_queue: HashMap::default(),
@@ -169,7 +172,8 @@ impl Broadcaster for TestBroadcaster {
   fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
     console_log!("Broadcasting {} from server", message.kind());
     let mut players = self.players.lock().unwrap();
-    for (_uuid, messages) in players.iter_mut() {
+    for (uuid, messages) in players.iter_mut() {
+      console_log!("Sending to {}", uuid);
       messages.push(message.clone());
     }
     console_log!("Broadcast complete");
@@ -189,7 +193,7 @@ impl Broadcaster for TestBroadcaster {
   }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct TestPlayerTx {
   messages: Arc<Mutex<Vec<ClientToServerMessage>>>,
 }

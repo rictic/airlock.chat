@@ -57,6 +57,7 @@ features = [
   'Location',
   'MessageEvent',
   'ProgressEvent',
+  'Storage',
   'WebSocket',
   'Window',
 ]

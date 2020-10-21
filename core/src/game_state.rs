@@ -102,9 +102,6 @@ impl GameState {
       let Speed { dx, dy } = player.speed;
       player.position.x += dx * time_steps_passed;
       player.position.y += dy * time_steps_passed;
-      // We don't handle inputs.q here because player position may be
-      // out of sync, but we _super_ don't want to let life or death
-      // get out of sync.
     }
   }
 
@@ -112,27 +109,42 @@ impl GameState {
     self.status = GameStatus::Won(team);
   }
 
-  pub fn note_game_started(&mut self) -> Result<(), String> {
+  pub fn get_game_start_info(&self) -> StartInfo {
+    let mut assignments: BTreeMap<UUID, PlayerStartInfo> = self
+      .players
+      .keys()
+      .map(|k| (*k, PlayerStartInfo::default()))
+      .collect();
+    let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
+    for (i, (_uuid, player_start_info)) in assignments.iter_mut().enumerate() {
+      if i == impostor_index {
+        player_start_info.team = Team::Impostors;
+      }
+    }
+    StartInfo {
+      assignments: assignments.into_iter().collect(),
+    }
+  }
+
+  pub fn note_game_started(&mut self, start_info: &StartInfo) -> Result<(), String> {
     if self.status != GameStatus::Lobby {
       return Err(format!(
         "Internal error: got a message to start a game when not in the lobby!? Game status: {:?}",
         self.status
       ));
     }
-    self.status = GameStatus::Playing(PlayState::Night);
-    let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
-    for (i, (_, player)) in self.players.iter_mut().enumerate() {
-      if i == impostor_index {
-        player.impostor = true;
+    for (uuid, start_info) in start_info.assignments.iter() {
+      if let Some(player) = self.players.get_mut(uuid) {
+        player.impostor = start_info.team == Team::Impostors;
+        player.tasks = start_info.tasks.clone();
+      } else {
+        return Err(format!(
+          "Unable to find player with uuid {} when starting game.",
+          uuid
+        ));
       }
-      player.tasks = (0..6)
-        .map(|_| Task {
-          finished: false,
-          position: Position::random(),
-        })
-        .collect();
     }
-
+    self.status = GameStatus::Playing(PlayState::Night);
     Ok(())
   }
 
@@ -267,13 +279,18 @@ impl Position {
       .abs()
   }
 
-  fn random() -> Position {
+  pub fn random() -> Position {
     let mut rng = rand::thread_rng();
     Position {
       x: rng.gen_range(30.0, WIDTH - 30.0),
       y: rng.gen_range(30.0, HEIGHT - 30.0),
     }
   }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+pub struct StartInfo {
+  pub assignments: Vec<(UUID, PlayerStartInfo)>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -328,6 +345,14 @@ pub struct Task {
   pub position: Position,
   pub finished: bool,
 }
+impl Default for Task {
+  fn default() -> Self {
+    Self {
+      finished: false,
+      position: Position::random(),
+    }
+  }
+}
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Player {
@@ -342,17 +367,13 @@ pub struct Player {
 }
 
 impl Player {
-  pub fn new(uuid: UUID, name: String, color: Color) -> Player {
-    let starting_position_seed: f64 = rand::random();
+  pub fn new(uuid: UUID, name: String, color: Color, position: Position) -> Player {
     Player {
       name,
       uuid,
       color,
       dead: false,
-      position: Position {
-        x: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
-        y: 275.0 + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
-      },
+      position,
       impostor: false,
       // 6 random tasks
       tasks: vec![],

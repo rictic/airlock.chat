@@ -35,6 +35,7 @@ impl ClientToServerMessage {
 pub enum ServerToClientMessage {
   Welcome { connection_id: UUID },
   Snapshot(Snapshot),
+  Replay(RecordedGame),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -52,6 +53,7 @@ impl ServerToClientMessage {
     match self {
       ServerToClientMessage::Welcome { .. } => "Welcome",
       ServerToClientMessage::Snapshot(_) => "Snapshot",
+      ServerToClientMessage::Replay(_) => "Replay",
     }
   }
 }
@@ -86,4 +88,20 @@ pub struct StartGame {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Disconnected {
   pub uuid: UUID,
+}
+
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PlayerStartInfo {
+  pub team: Team,
+  pub tasks: Vec<Task>,
+}
+
+impl Default for PlayerStartInfo {
+  fn default() -> Self {
+    Self {
+      team: Team::Crew,
+      tasks: (0..6).map(|_| Task::default()).collect(),
+    }
+  }
 }

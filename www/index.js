@@ -45,6 +45,7 @@ async function init() {
 
   const game = wasm.make_game(name);
   let previousFrameTime = performance.now();
+  let running = true;
   function drawOneFrame() {
     const timestamp = performance.now();
     const elapsed = timestamp - previousFrameTime;
@@ -77,6 +78,7 @@ async function init() {
     perfMessage += ` ${average(drawTimes).toFixed(1)}ms draw]`;
     output.innerText = message;
     perf.innerText = perfMessage;
+    running = !finished;
     if (!finished) {
       requestAnimationFrame(drawOneFrame);
     }
@@ -93,7 +95,8 @@ async function init() {
 
   const knownButtons = new Set([
       'w', 'a', 's', 'd', 'q', 'e', 'r', ' ', 'p',
-      'arrowup', 'arrowdown', 'arrowleft', 'arrowright'
+      'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
+      'j', 'k', 'l'
   ]);
   const heldButtons = {};
   for (const button of knownButtons) {
@@ -108,7 +111,16 @@ async function init() {
     const report = heldButtons['r'];
     const activate = heldButtons['e'] || heldButtons[' '];
     const play = heldButtons['p'];
-    game.set_inputs(up, down, left, right, kill, report, activate, play);
+    const skip_back = heldButtons['j'];
+    const skip_forward = heldButtons['l'];
+    const pause_playback = heldButtons['k'];
+    game.set_inputs(
+        up, down, left, right, kill, report,
+        activate, play, skip_back, skip_forward, pause_playback);
+    if (!running) {
+      running = true;
+      requestAnimationFrame(drawOneFrame);
+    }
   }
   document.addEventListener('keydown', (ev) => {
     const key = ev.key.toLowerCase();

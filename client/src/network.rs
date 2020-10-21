@@ -1,3 +1,4 @@
+use crate::js_api::save_recorded_game;
 use rust_us_core::console_log;
 use rust_us_core::get_version_sha;
 use rust_us_core::ClientToServerMessage;
@@ -67,37 +68,45 @@ pub fn create_websocket_and_listen(
   let ws_clone = ws.clone();
   let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
     // Starting with assuming text messages. Can make efficient later (bson?).
+    let message: ServerToClientMessage;
     if let Ok(txt) = e.data().dyn_into::<js_sys::JsString>() {
       let strng: String = txt.into();
-      let message: ServerToClientMessage = match serde_json::from_str(&strng) {
+      message = match serde_json::from_str(&strng) {
         Ok(m) => m,
         Err(e) => {
           console_log!("Unable to deserialize {:?} – {:?}", strng, e);
           return;
         }
       };
-      if let ServerToClientMessage::Welcome {
-        connection_id: uuid,
-      } = message
-      {
-        let clone = &game_as_player_clone.clone();
-        let mut wrapped = clone.lock().unwrap();
-        *wrapped = Some(GameAsPlayer::new(
-          uuid,
-          Box::new(WebSocketTx::new(ws_clone.clone())),
-        ));
-      }
-      let clone = &game_as_player_clone.clone();
-      let mut option_wrapped = clone.lock().unwrap();
-      let game_as_player = option_wrapped.as_mut().unwrap();
-      match game_as_player.handle_msg(message) {
-        Ok(()) => (),
-        Err(e) => {
-          console_log!("Error handling message {:?} – {:?}", strng, e);
+      if let ServerToClientMessage::Replay(_) = &message {
+        match save_recorded_game(&strng) {
+          Ok(()) => console_log!("Saved replay!"),
+          Err(e) => console_log!("Error saving game recording to localStorage: {:?}", e),
         }
       }
     } else {
-      console_log!("non-string message received! {:?}", e.data());
+      console_log!("Unable to handle binary encoded message.");
+      return;
+    }
+    if let ServerToClientMessage::Welcome {
+      connection_id: uuid,
+    } = message
+    {
+      let clone = &game_as_player_clone.clone();
+      let mut wrapped = clone.lock().unwrap();
+      *wrapped = Some(GameAsPlayer::new(
+        uuid,
+        Box::new(WebSocketTx::new(ws_clone.clone())),
+      ));
+    }
+    let clone = &game_as_player_clone.clone();
+    let mut option_wrapped = clone.lock().unwrap();
+    let game_as_player = option_wrapped.as_mut().unwrap();
+    match game_as_player.handle_msg(message) {
+      Ok(()) => (),
+      Err(e) => {
+        console_log!("Player failed to handle message: {:?}", e);
+      }
     }
   }) as Box<dyn FnMut(MessageEvent)>);
   // set message event handler on WebSocket

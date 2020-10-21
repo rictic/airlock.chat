@@ -26,12 +26,7 @@
     "url": "https://github.com/rustwasm/create-wasm-app/issues"
   },
   "homepage": "https://github.com/rustwasm/create-wasm-app#readme",
-  "dependencies": {
-    "rust-us": "file:../client/pkg"
-  },
   "devDependencies": {
-    "@web/dev-server": "0.0.15",
-    "copy-webpack-plugin": "^5.0.0",
-    "hello-wasm-pack": "^0.1.0"
+    "@web/dev-server": "0.0.15"
   }
 }

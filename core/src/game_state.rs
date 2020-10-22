@@ -1,8 +1,11 @@
 use crate::*;
 use core::time::Duration;
 use rand::Rng;
+use serde::de::{self, Visitor};
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -238,7 +241,7 @@ pub const HEIGHT: f64 = 768.0;
 
 // We don't use a real UUID impl because getting randomness in the browser
 // is different than the server, and I got a compiler error about it.
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UUID {
   v: [u8; 16],
 }
@@ -247,7 +250,7 @@ pub struct UUID {
 impl Display for UUID {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     for byte in self.v.iter() {
-      write!(fmt, "{:x?}", byte)?;
+      write!(fmt, "{:02x?}", byte)?;
     }
     Ok(())
   }
@@ -256,7 +259,7 @@ impl Display for UUID {
 impl Debug for UUID {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     for byte in self.v.iter() {
-      write!(fmt, "{:x?}", byte)?;
+      write!(fmt, "{:02x?}", byte)?;
     }
     Ok(())
   }
@@ -265,6 +268,60 @@ impl Debug for UUID {
 impl UUID {
   pub fn random() -> UUID {
     UUID { v: rand::random() }
+  }
+}
+
+impl Serialize for UUID {
+  fn serialize<S>(
+    &self,
+    serializer: S,
+  ) -> Result<<S as serde::Serializer>::Ok, <S as serde::Serializer>::Error>
+  where
+    S: serde::Serializer,
+  {
+    serializer.serialize_str(&format!("{}", self))
+  }
+}
+struct UUIDVisitor;
+impl<'de> Visitor<'de> for UUIDVisitor {
+  type Value = UUID;
+  fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    formatter.write_str("a 32 character long hex string")
+  }
+
+  fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+  where
+    E: de::Error,
+  {
+    if value.len() != 32 {
+      return Err(E::custom(format!(
+        "expected UUID string to be len 32, was {}",
+        value.len()
+      )));
+    }
+    let mut bytes = [0; 16];
+    for (i, byte) in bytes.iter_mut().enumerate() {
+      let si = i * 2;
+      let hex_byte = &value[si..si + 2];
+      *byte = match u8::from_str_radix(hex_byte, 16) {
+        Ok(v) => v,
+        Err(_) => {
+          return Err(E::custom(format!(
+            "expected hex, but found {} at offset {}",
+            hex_byte, si
+          )))
+        }
+      }
+    }
+    Ok(UUID { v: bytes })
+  }
+}
+impl<'de> Deserialize<'de> for UUID {
+  fn deserialize<D>(deserializer: D) -> Result<UUID, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    deserializer.deserialize_str(UUIDVisitor)
   }
 }
 

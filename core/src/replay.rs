@@ -186,7 +186,7 @@ impl PlaybackServer {
     if self.game_server.state.status.finished() && server_messages == 0 {
       return Ok(true);
     }
-    self.game_server.simulate(elapsed);
+    self.game_server.simulate(elapsed)?;
     self.current_time = new_time;
     self.deliver_messages(player)?;
     Ok(false)

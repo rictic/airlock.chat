@@ -1,4 +1,5 @@
 use crate::*;
+use core::time::Duration;
 use std::collections::BTreeSet;
 
 // The state of user input at some point in time. i.e. what buttons is
@@ -45,6 +46,7 @@ pub struct GameAsPlayer {
   pub state: GameState,
   pub socket: Box<dyn GameTx>,
   pub contextual_state: ContextualState,
+  pub displayed_messages: Vec<DisplayMessage>,
 }
 
 // A game from the perspective of a particular player.
@@ -56,6 +58,7 @@ impl GameAsPlayer {
       contextual_state: ContextualState::Blank,
       my_uuid: uuid,
       socket,
+      displayed_messages: Vec::new(),
     }
   }
 
@@ -70,6 +73,16 @@ impl GameAsPlayer {
 
   pub fn inputs(&self) -> InputState {
     self.inputs
+  }
+
+  pub fn simulate(&mut self, elapsed: Duration) -> bool {
+    // Tick down time for our displayed messages, and drop the ones
+    // whose durations have expired.
+    for message in self.displayed_messages.iter_mut() {
+      message.pass_time(elapsed);
+    }
+    self.displayed_messages.retain(|m| !m.is_expired());
+    self.state.simulate(elapsed)
   }
 
   // Take the given inputs from the local player
@@ -435,6 +448,9 @@ impl GameAsPlayer {
       }
       ServerToClientMessage::Replay(_recorded_game) => {
         // Nothing to handle here. The JS client handles this itself.
+      }
+      ServerToClientMessage::DisplayMessage(display_message) => {
+        self.displayed_messages.push(display_message);
       }
     }
     Ok(())

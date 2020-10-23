@@ -142,17 +142,49 @@ impl Canvas {
     }
     let game = game.as_ref().unwrap();
     match &game.state.status {
-      GameStatus::Connecting | GameStatus::Disconnected | GameStatus::Won(_) => Ok(()),
-      GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.draw_night(&game),
+      GameStatus::Connecting | GameStatus::Disconnected | GameStatus::Won(_) => (),
+      GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => {
+        self.draw_night(&game)?;
+      }
       GameStatus::Playing(PlayState::Day(n)) => {
         self.camera = Camera::get_global_camera(self);
         let voting_ui_state = match &game.contextual_state {
           ContextualState::Voting(v) => Some(v),
           _ => None,
         };
-        self.draw_day(&game, n, voting_ui_state)
+        self.draw_day(&game, n, voting_ui_state)?
       }
+    };
+
+    let font_height = 24.0;
+    self
+      .context
+      .set_font(&format!("{}px Arial Black", font_height));
+    self.context.set_line_width(4.0);
+    self.context.set_text_align("left");
+    self.context.set_text_baseline("middle");
+    self.context.set_stroke_style(&JsValue::from("#fff"));
+    self.context.set_fill_style(&JsValue::from("#000"));
+    let messages = game
+      .displayed_messages
+      .iter()
+      .rev()
+      .filter(|m| m.ready_to_display())
+      .enumerate();
+    for (i, message) in messages {
+      self.context.begin_path();
+      let text_pos = (
+        30.0,
+        self.height - (30.0 + (font_height + 5.0) * (i as f64)),
+      );
+      self
+        .context
+        .stroke_text(&message.message, text_pos.0, text_pos.1)?;
+      self
+        .context
+        .fill_text(&message.message, text_pos.0, text_pos.1)?;
     }
+    Ok(())
   }
 
   fn draw_night(&mut self, game: &GameAsPlayer) -> Result<(), JsValue> {

@@ -224,6 +224,13 @@ impl GameState {
   }
 
   fn check_for_victories(&mut self) {
+    match self.status {
+      GameStatus::Connecting
+      | GameStatus::Disconnected
+      | GameStatus::Lobby
+      | GameStatus::Won(_) => return,
+      GameStatus::Playing(_) => (),
+    }
     // The game might be over because the crew has won!
     self.check_for_crew_win();
     // The game might be over because the impostors have won D:

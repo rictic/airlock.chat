@@ -43,7 +43,7 @@ impl GameServer {
     }
   }
 
-  pub fn simulate(&mut self, elapsed: Duration) -> bool {
+  pub fn simulate(&mut self, elapsed: Duration) -> Result<bool, Box<dyn Error>> {
     let timeout_duration = std::time::Duration::from_secs(15 * /* minutes */60);
     let timed_out = self.last_message_received_at.elapsed() > timeout_duration;
     if self.state.status != GameStatus::Connecting && timed_out {
@@ -61,10 +61,28 @@ impl GameServer {
         }
       }
     }
-    finished
+    if let GameStatus::Won(team) = self.state.status {
+      self
+        .broadcaster
+        .broadcast(&&ServerToClientMessage::DisplayMessage(DisplayMessage {
+          message: format!("{:?} win!", team),
+          duration: Duration::from_secs(15),
+          delay_before_show: Duration::from_secs(0),
+        }))?;
+    }
+    Ok(finished)
   }
 
   pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
+    if let Some(player) = self.state.players.get(&disconnected_player) {
+      self
+        .broadcaster
+        .broadcast(&&ServerToClientMessage::DisplayMessage(DisplayMessage {
+          message: format!("{} ({:?}) disconnected", player.name, player.color),
+          duration: Duration::from_secs(10),
+          delay_before_show: Duration::from_secs(0),
+        }))?;
+    }
     self.state.handle_disconnection(disconnected_player);
     self.broadcast_snapshot()?;
     Ok(())
@@ -121,6 +139,60 @@ impl GameServer {
         };
         self.state.note_game_started(&start_info)?;
         self.broadcast_snapshot()?;
+        for (uuid, player) in self.state.players.iter() {
+          self.broadcaster.send_to_player(
+            uuid,
+            &ServerToClientMessage::DisplayMessage(DisplayMessage {
+              message: "The game has begun!".to_string(),
+              duration: Duration::from_secs(10),
+              delay_before_show: Duration::from_secs(0),
+            }),
+          )?;
+          if player.impostor {
+            self.broadcaster.send_to_player(
+              uuid,
+              &ServerToClientMessage::DisplayMessage(DisplayMessage {
+                message:
+                  "You are an evil impostor. Try to find crewmates alone and kill them! (press Q)"
+                    .to_string(),
+                duration: Duration::from_secs(10),
+                delay_before_show: Duration::from_secs(3),
+              }),
+            )?;
+            self.broadcaster.send_to_player(
+              uuid,
+              &ServerToClientMessage::DisplayMessage(DisplayMessage {
+                message: "But don't get caught! The crew can vote you out!".to_string(),
+                duration: Duration::from_secs(10),
+                delay_before_show: Duration::from_secs(6),
+              }),
+            )?;
+          } else {
+            self.broadcaster.send_to_player(
+              uuid,
+              &ServerToClientMessage::DisplayMessage(DisplayMessage {
+                message: "You are good crewmate. Find your tasks and complete them (press E)"
+                  .to_string(),
+                duration: Duration::from_secs(10),
+                delay_before_show: Duration::from_secs(3),
+              }),
+            )?;
+            let num_impostors = self
+              .state
+              .players
+              .iter()
+              .filter(|(_, p)| p.impostor)
+              .count();
+            self.broadcaster.send_to_player(
+              uuid,
+              &ServerToClientMessage::DisplayMessage(DisplayMessage {
+                message: format!("But beware, there's {} evil impostor{} on board. If you find a dead body, press R to report it", num_impostors, if num_impostors == 1 {""} else {"s"}),
+                duration: Duration::from_secs(10),
+                delay_before_show: Duration::from_secs(6),
+              }),
+            )?;
+          }
+        }
         return Ok(Some(ServerDecision::StartInfo(start_info)));
       }
       ClientToServerMessage::Killed(body) => {
@@ -258,6 +330,13 @@ impl GameServer {
               // Add the new player (possibly with a new color)
               let player = Player::new(sender, name.to_string(), *color, position);
               self.state.players.insert(sender, player);
+              self
+                .broadcaster
+                .broadcast(&ServerToClientMessage::DisplayMessage(DisplayMessage {
+                  message: format!("{} ({:?}) has joined", name, color),
+                  duration: Duration::from_secs(10),
+                  delay_before_show: Duration::from_secs(0),
+                }))?;
             }
           }
           // In all other cases, they're joining as a spectator.
@@ -269,6 +348,14 @@ impl GameServer {
           &ServerToClientMessage::Welcome {
             connection_id: sender,
           },
+        )?;
+        self.broadcaster.send_to_player(
+          &sender,
+          &&ServerToClientMessage::DisplayMessage(DisplayMessage {
+            message: "Welcome to airlock.chat!".to_string(),
+            duration: Duration::from_secs(10),
+            delay_before_show: Duration::from_secs(0),
+          }),
         )?;
 
         // Send out a snapshot to catch the new client up, whether or not they're playing.

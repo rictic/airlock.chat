@@ -121,7 +121,7 @@ impl GameWrapper {
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
     }
-    Ok(game.state.simulate(elapsed))
+    Ok(game.simulate(elapsed))
   }
 
   pub fn draw(&mut self) -> Result<(), JsValue> {

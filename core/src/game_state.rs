@@ -57,7 +57,7 @@ impl GameState {
   pub fn simulate(&mut self, elapsed: Duration) -> bool {
     self.status.progress_time(elapsed);
     match &self.status {
-      GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.simulate_day(elapsed),
+      GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.simulate_night(elapsed),
       GameStatus::Playing(PlayState::Day(day_state)) => {
         if self.is_day_over(day_state) {
           match day_state.determine_winner_of_election() {
@@ -110,7 +110,7 @@ impl GameState {
       .all(|(uuid, _)| day_state.votes.contains_key(uuid))
   }
 
-  fn simulate_day(&mut self, elapsed: Duration) {
+  fn simulate_night(&mut self, elapsed: Duration) {
     // elapsed is the time, in milliseconds, that has passed since the
     // last time we simulated.
     // By making our simulations relative to the amount of time that's passed,

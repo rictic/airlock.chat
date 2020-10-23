@@ -72,12 +72,7 @@ impl GameState {
           console_log!("Day is done, now it's night!");
           self.check_for_victories();
           self.bodies.clear();
-          for (i, (_, p)) in self.players.iter_mut().enumerate() {
-            p.position = Position {
-              x: 275.0 + (100.0 * ((i as f64) * 2.0 * std::f64::consts::PI).sin()),
-              y: 275.0 + (100.0 * ((i as f64) * 2.0 * std::f64::consts::PI).cos()),
-            }
-          }
+          self.place_players_around_table();
           // Now it's night!
           self.status = GameStatus::Playing(PlayState::Night);
         }
@@ -88,6 +83,17 @@ impl GameState {
     }
 
     self.status.finished()
+  }
+
+  pub fn place_players_around_table(&mut self) {
+    let num_players = self.players.len() as f64;
+    for (i, (_, p)) in self.players.iter_mut().enumerate() {
+      let offset = ((i as f64) / num_players) * 2.0 * std::f64::consts::PI;
+      p.position = Position {
+        x: 275.0 + (100.0 * offset.sin()),
+        y: 275.0 + (100.0 * offset.cos()),
+      }
+    }
   }
 
   fn is_day_over(&self, day_state: &DayState) -> bool {
@@ -159,6 +165,7 @@ impl GameState {
       }
     }
     self.status = GameStatus::Playing(PlayState::Night);
+    self.place_players_around_table();
     Ok(())
   }
 

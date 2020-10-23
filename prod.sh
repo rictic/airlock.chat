@@ -5,7 +5,7 @@ else
 fi
 
 echo "Building client..."
-(cd client && wasm-pack build --release --target web && cd ../www && npm run build)
+(cd client && wasm-pack build --release --target web)
 
 echo "Client built, building the server..."
 cargo build --release

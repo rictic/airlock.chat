@@ -92,7 +92,8 @@ impl GameState {
       p.position = Position {
         x: 275.0 + (100.0 * offset.sin()),
         y: 275.0 + (100.0 * offset.cos()),
-      }
+      };
+      p.speed = Speed::default();
     }
   }
 
@@ -379,7 +380,7 @@ pub struct StartInfo {
   pub assignments: Vec<(UUID, PlayerStartInfo)>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Speed {
   pub dx: f64,
   pub dy: f64,
@@ -472,7 +473,7 @@ impl Player {
       impostor: false,
       // 6 random tasks
       tasks: vec![],
-      speed: Speed { dx: 0.0, dy: 0.0 },
+      speed: Speed::default(),
     }
   }
 

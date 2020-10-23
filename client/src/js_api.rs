@@ -186,9 +186,7 @@ impl GameWrapper {
           "The game has begun! You're spectating.".to_string()
         }
       }
-      GameStatus::Playing(PlayState::Day(_)) => {
-        "Emergency meeting called! Voting isn't implemented yet though...".to_string()
-      }
+      GameStatus::Playing(PlayState::Day(_)) => "".to_string(),
     }
   }
 }

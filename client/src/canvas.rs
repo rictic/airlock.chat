@@ -1,10 +1,8 @@
 use crate::*;
+use core::time::Duration;
 use rust_us_core::HEIGHT;
 use rust_us_core::WIDTH;
-use rust_us_core::{
-  Color, ContextualState, DayState, DeadBody, GameAsPlayer, GameStatus, PlayState, Player, Task,
-  VotingUiState,
-};
+use rust_us_core::*;
 use std::error::Error;
 use std::f64::consts::PI;
 use std::sync::Arc;
@@ -61,6 +59,33 @@ impl Camera {
     let x = (x - self.left) * self.zoom;
     let y = (y - self.top) * self.zoom;
     (x, y)
+  }
+
+  fn get_global_camera(canvas: &Canvas) -> Self {
+    Self {
+      // this isn't the right zoom, it should be relative to
+      // canvas width and height
+      zoom: 1.0,
+      left: 0.0,
+      top: 0.0,
+      right: canvas.width,
+      bottom: canvas.height,
+    }
+  }
+
+  fn centered_on_point(canvas: &Canvas, center: Position) -> Self {
+    // Likewise, this zoom shouldn't be constant
+    let zoom = 2.0;
+    let map_width = canvas.width / zoom;
+    let map_height = canvas.height / zoom;
+    // Players see the area around them
+    Camera {
+      zoom,
+      left: center.x - (map_width / 2.0),
+      right: center.x + (map_width / 2.0),
+      top: center.y - (map_height / 2.0),
+      bottom: center.y + (map_height / 2.0),
+    }
   }
 }
 impl Canvas {
@@ -120,6 +145,7 @@ impl Canvas {
       GameStatus::Connecting | GameStatus::Disconnected | GameStatus::Won(_) => Ok(()),
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.draw_night(&game),
       GameStatus::Playing(PlayState::Day(n)) => {
+        self.camera = Camera::get_global_camera(self);
         let voting_ui_state = match &game.contextual_state {
           ContextualState::Voting(v) => Some(v),
           _ => None,
@@ -138,27 +164,9 @@ impl Canvas {
     self.camera = match game.local_player() {
       None => {
         // the spectator sees all
-        Camera {
-          zoom: 1.0, // this isn't the right zoom
-          left: 0.0,
-          top: 0.0,
-          right: self.width,
-          bottom: self.height,
-        }
+        Camera::get_global_camera(self)
       }
-      Some(p) => {
-        let zoom = 2.0;
-        let map_width = self.width / zoom;
-        let map_height = self.height / zoom;
-        // Players see the area around them
-        Camera {
-          zoom,
-          left: p.position.x - (map_width / 2.0),
-          right: p.position.x + (map_width / 2.0),
-          top: p.position.y - (map_height / 2.0),
-          bottom: p.position.y + (map_height / 2.0),
-        }
-      }
+      Some(p) => Camera::centered_on_point(self, p.position),
     };
 
     self.context.set_line_width(self.camera.zoom);
@@ -302,13 +310,11 @@ impl Canvas {
       self.height - line_width,
     );
     self.context.set_stroke_style(&JsValue::from_str("#333"));
-    // self.context.set_fill_style(&JsValue::from_str("#822"));
     self.context.set_line_width(line_width);
-    // self.context.fill();
     self.context.stroke();
 
     // draw boxes
-    let num_rows = ((Color::all().len() as f64) / 2.0).ceil() as u32;
+    let num_rows = 1 + (((Color::all().len() as f64) / 2.0).ceil() as u32);
     self.context.begin_path();
     self.context.move_to(self.width / 2.0, 0.0);
     self.context.line_to(self.width / 2.0, self.height);
@@ -336,7 +342,7 @@ impl Canvas {
 
       let mut is_selected = false;
       if let Some(voting_state) = voting_state {
-        if voting_state.highlighted_player == Some(*uuid) {
+        if voting_state.highlighted_player == Some(VoteTarget::Player { uuid: *uuid }) {
           is_selected = true;
         }
       }
@@ -360,7 +366,6 @@ impl Canvas {
       // Draw avatars
       self.context.begin_path();
       let avatar_radius = ((row_inner_height / 2.0) - (line_width)).max(0.0);
-
       self.context.arc(
         top_left.0 + (row_inner_height / 2.0),
         top_left.1 + (row_inner_height / 2.0),
@@ -430,6 +435,74 @@ impl Canvas {
         top_left.0 + avatar_radius + (3.5 * line_width),
         top_left.1 + (1.5 * line_width),
       )?;
+    }
+
+    {
+      // Draw the 'skip' option
+      let top_left = (line_width, (row_height * 5.0) + line_width);
+
+      let mut is_selected = false;
+      if let Some(voting_state) = voting_state {
+        if voting_state.highlighted_player == Some(VoteTarget::Skip) {
+          is_selected = true;
+        }
+      }
+
+      if is_selected {
+        // Draw backing color
+        self.context.begin_path();
+        self
+          .context
+          .rect(top_left.0, top_left.1, row_inner_width, row_inner_height);
+        self.context.set_fill_style(&JsValue::from("#33d"));
+        self.context.fill();
+      }
+
+      self.context.set_font(&format!(
+        "{}px Arial Black",
+        (24.0 * self.camera.zoom).floor()
+      ));
+      self.context.begin_path();
+      self.context.set_line_width(5.0 * self.camera.zoom);
+      self.context.set_stroke_style(&JsValue::from("#000"));
+      self.context.set_text_align("left");
+      self.context.set_text_baseline("middle");
+      self.context.set_fill_style(&JsValue::from("#fff"));
+      let text_pos = (
+        top_left.0 + (1.0 * line_width),
+        top_left.1 + (row_inner_height / 2.0),
+      );
+      self.context.stroke_text("Skip", text_pos.0, text_pos.1)?;
+      self.context.fill_text("Skip", text_pos.0, text_pos.1)?;
+    }
+
+    {
+      // Draw the time remaining
+      let top_right = (self.width - line_width, (row_height * 5.0) + line_width);
+
+      self.context.set_font(&format!(
+        "{}px Arial Black",
+        (22.0 * self.camera.zoom).floor()
+      ));
+      self.context.begin_path();
+      self.context.set_line_width(5.0 * self.camera.zoom);
+      self.context.set_stroke_style(&JsValue::from("#000"));
+      self.context.set_text_align("right");
+      self.context.set_text_baseline("middle");
+      self
+        .context
+        .set_fill_style(&&if day_state.time_remaining < Duration::from_secs(20) {
+          JsValue::from("#d22")
+        } else {
+          JsValue::from("#fff")
+        });
+      let text_pos = (
+        top_right.0 - (1.5 * line_width),
+        top_right.1 + (row_inner_height / 2.0),
+      );
+      let text = format!("{}s remaining to vote", day_state.time_remaining.as_secs());
+      self.context.stroke_text(&text, text_pos.0, text_pos.1)?;
+      self.context.fill_text(&text, text_pos.0, text_pos.1)?;
     }
 
     Ok(())

@@ -33,14 +33,13 @@ pub struct GameServer {
 impl GameServer {
   pub fn new(broadcaster: Box<dyn Broadcaster>, record_game: bool) -> Self {
     let now = Instant::now();
-    let recording = if record_game { Some(Vec::new()) } else { None };
     Self {
       version: get_version_sha().to_string(),
       state: GameState::new(),
       start_time: now,
       last_message_received_at: now,
       broadcaster,
-      recording,
+      recording: if record_game { Some(Vec::new()) } else { None },
     }
   }
 
@@ -271,7 +270,6 @@ impl GameServer {
             connection_id: sender,
           },
         )?;
-        console_log!("Player joined? Sending out snapshot");
 
         // Send out a snapshot to catch the new client up, whether or not they're playing.
         self.broadcast_snapshot()?;

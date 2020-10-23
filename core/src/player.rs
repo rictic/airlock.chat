@@ -180,39 +180,31 @@ impl GameAsPlayer {
       }
     };
 
+    let mut vote_targets: Vec<TargetInVotingTable> = self
+      .state
+      .players
+      .iter()
+      .enumerate()
+      .filter(|(_, (_, p))| !p.dead)
+      .map(|(idx, (uuid, _p))| TargetInVotingTable::new(idx, VoteTarget::Player { uuid: *uuid }))
+      .collect();
+    vote_targets.push(TargetInVotingTable::new(10, VoteTarget::Skip));
     match voting_state.highlighted_player {
       None => {
         if pressed.up || pressed.down || pressed.left || pressed.right {
-          // Nothing was highlighted, so highlight the first non-dead player.
-          voting_state.highlighted_player = self
-            .state
-            .players
-            .iter()
-            .find(|(_uuid, player)| !player.dead)
-            .map(|(uuid, _player)| *uuid);
+          // Nothing was highlighted, so highlight the first target player.
+          voting_state.highlighted_player = vote_targets.first().map(|vt| vt.target);
         }
       }
       Some(highlighted) => {
-        let mut highlighted: PlayerInVotingTable = self
-          .state
-          .players
+        let mut highlighted: TargetInVotingTable = *vote_targets
           .iter()
-          .enumerate()
-          .find(|(_i, (u, _p))| **u == highlighted)
-          .map(|(i, (u, _p))| PlayerInVotingTable::new(i, *u))
+          .find(|vt| vt.target == highlighted)
           .ok_or_else(|| "Internal Error: Highlighting a nonexistant player?".to_string())?;
-        let living_uuid_indexes: Vec<PlayerInVotingTable> = self
-          .state
-          .players
-          .iter()
-          .enumerate()
-          .filter(|(_i, (_u, p))| !p.dead)
-          .map(|(i, (u, _p))| PlayerInVotingTable::new(i, *u))
-          .collect();
         if pressed.up {
-          let mut closest_same_column_above: Option<PlayerInVotingTable> = None;
-          let mut closest_above: Option<PlayerInVotingTable> = None;
-          for p in living_uuid_indexes.iter() {
+          let mut closest_same_column_above: Option<TargetInVotingTable> = None;
+          let mut closest_above: Option<TargetInVotingTable> = None;
+          for p in vote_targets.iter() {
             if p.y >= highlighted.y {
               break; // no longer above
             }
@@ -226,9 +218,9 @@ impl GameAsPlayer {
             closest_same_column_above.unwrap_or_else(|| closest_above.unwrap_or(highlighted));
         }
         if pressed.down {
-          let mut closest_same_column_below: Option<PlayerInVotingTable> = None;
-          let mut closest_below: Option<PlayerInVotingTable> = None;
-          for p in living_uuid_indexes.iter() {
+          let mut closest_same_column_below: Option<TargetInVotingTable> = None;
+          let mut closest_below: Option<TargetInVotingTable> = None;
+          for p in vote_targets.iter() {
             if p.y <= highlighted.y {
               continue; // not below
             }
@@ -242,9 +234,9 @@ impl GameAsPlayer {
             closest_same_column_below.unwrap_or_else(|| closest_below.unwrap_or(highlighted));
         }
         if pressed.left && highlighted.x == 1 {
-          let mut closest_left_column_above: Option<PlayerInVotingTable> = None;
-          let mut first_in_left_column: Option<PlayerInVotingTable> = None;
-          for p in living_uuid_indexes.iter() {
+          let mut closest_left_column_above: Option<TargetInVotingTable> = None;
+          let mut first_in_left_column: Option<TargetInVotingTable> = None;
+          for p in vote_targets.iter() {
             if p.x != 0 {
               continue; // not in left column
             }
@@ -258,9 +250,9 @@ impl GameAsPlayer {
             .unwrap_or_else(|| first_in_left_column.unwrap_or(highlighted));
         }
         if pressed.right && highlighted.x == 0 {
-          let mut closest_right_column_above: Option<PlayerInVotingTable> = None;
-          let mut first_in_right_column: Option<PlayerInVotingTable> = None;
-          for p in living_uuid_indexes.iter() {
+          let mut closest_right_column_above: Option<TargetInVotingTable> = None;
+          let mut first_in_right_column: Option<TargetInVotingTable> = None;
+          for p in vote_targets.iter() {
             if p.x != 1 {
               continue; // not in right column
             }
@@ -273,14 +265,12 @@ impl GameAsPlayer {
           highlighted = closest_right_column_above
             .unwrap_or_else(|| first_in_right_column.unwrap_or(highlighted));
         }
-        voting_state.highlighted_player = Some(highlighted.uuid);
+        voting_state.highlighted_player = Some(highlighted.target);
       }
     }
     if pressed.activate {
       if let Some(target) = voting_state.highlighted_player {
-        self.socket.send(&ClientToServerMessage::Vote {
-          target: VoteTarget::Player { uuid: target },
-        })?;
+        self.socket.send(&ClientToServerMessage::Vote { target })?;
         voting_state.highlighted_player = None;
       }
     }
@@ -479,7 +469,7 @@ pub enum ContextualState {
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct VotingUiState {
-  pub highlighted_player: Option<UUID>,
+  pub highlighted_player: Option<VoteTarget>,
 }
 
 pub trait GameTx {
@@ -487,17 +477,17 @@ pub trait GameTx {
 }
 
 #[derive(Clone, Copy)]
-struct PlayerInVotingTable {
+struct TargetInVotingTable {
   x: usize,
   y: usize,
-  uuid: UUID,
+  target: VoteTarget,
 }
-impl PlayerInVotingTable {
-  fn new(index: usize, uuid: UUID) -> Self {
-    Self {
+impl TargetInVotingTable {
+  fn new(index: usize, target: VoteTarget) -> Self {
+    TargetInVotingTable {
       x: index % 2,
       y: index / 2,
-      uuid,
+      target,
     }
   }
 }

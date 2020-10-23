@@ -69,6 +69,7 @@ impl GameState {
               }
             }
           }
+          console_log!("Day is done, now it's night!");
           // Now it's night!
           self.status = GameStatus::Playing(PlayState::Night);
         }

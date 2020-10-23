@@ -446,6 +446,9 @@ impl GameAsPlayer {
   }
 
   fn update_status(&mut self, new_status: GameStatus) {
+    if !self.state.status.is_same_kind(&new_status) {
+      self.inputs = InputState::default();
+    }
     if let GameStatus::Playing(PlayState::Day(_)) = new_status {
       match self.contextual_state {
         ContextualState::Voting(_) => (),

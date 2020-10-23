@@ -70,6 +70,14 @@ impl GameState {
             }
           }
           console_log!("Day is done, now it's night!");
+          self.check_for_victories();
+          self.bodies.clear();
+          for (i, (_, p)) in self.players.iter_mut().enumerate() {
+            p.position = Position {
+              x: 275.0 + (100.0 * ((i as f64) * 2.0 * std::f64::consts::PI).sin()),
+              y: 275.0 + (100.0 * ((i as f64) * 2.0 * std::f64::consts::PI).cos()),
+            }
+          }
           // Now it's night!
           self.status = GameStatus::Playing(PlayState::Night);
         }
@@ -208,16 +216,20 @@ impl GameState {
     }
   }
 
+  fn check_for_victories(&mut self) {
+    // The game might be over because the crew has won!
+    self.check_for_crew_win();
+    // The game might be over because the impostors have won D:
+    self.check_for_impostor_win();
+  }
+
   pub fn handle_disconnection(&mut self, disconnected_player: UUID) {
     self.players.remove(&disconnected_player);
     // The game might be over, because we're out of players
     if self.players.is_empty() {
       self.status = GameStatus::Disconnected;
     }
-    // The game might be over because the crew has won!
-    self.check_for_crew_win();
-    // The game might be over because the impostors have won D:
-    self.check_for_impostor_win();
+    self.check_for_victories();
     // We might be voting, in which case we want to remove all votes for the
     // disconnected player, so that players can vote for someone else if they wish.
     if let GameStatus::Playing(PlayState::Day(day)) = &mut self.status {
@@ -477,6 +489,16 @@ impl GameStatus {
         .time_remaining
         .checked_sub(elapsed)
         .unwrap_or_else(|| Duration::from_secs(0));
+    }
+  }
+
+  pub fn is_same_kind(&self, other: &GameStatus) -> bool {
+    match self {
+      GameStatus::Connecting => matches!(other, GameStatus::Connecting),
+      GameStatus::Lobby => matches!(other, GameStatus::Lobby),
+      GameStatus::Playing(_) => matches!(other, GameStatus::Playing(_)),
+      GameStatus::Won(_) => matches!(other, GameStatus::Won(_)),
+      GameStatus::Disconnected => matches!(other, GameStatus::Disconnected),
     }
   }
 }

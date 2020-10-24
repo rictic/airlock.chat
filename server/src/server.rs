@@ -41,12 +41,8 @@ struct BroadCastServer {
 impl Broadcaster for BroadCastServer {
   fn broadcast(&self, message: &ServerToClientMessage) -> Result<(), Box<dyn Error>> {
     println!("Broadcasting {:?}", message);
-    let message = match message {
-      ServerToClientMessage::Welcome { .. }
-      | ServerToClientMessage::Snapshot(_)
-      | ServerToClientMessage::Replay(_) => Message::text(serde_json::to_string(message)?),
-    };
-    broadcast(self.room.clone(), &message)?;
+    let message = Message::text(serde_json::to_string(message)?);
+    broadcast(self.room.clone(), &message);
     Ok(())
   }
 
@@ -58,11 +54,19 @@ impl Broadcaster for BroadCastServer {
     let room = self.room.clone();
     let peers = room.lock().unwrap();
     let player_connection = match peers.get(uuid) {
-      None => return Err(format!("No player connection with UUID {:?}", uuid).into()),
+      None => {
+        // This could be a race condition with a player disconnecting.
+        // Not a fatal error.
+        println!("No player connection with UUID {:?}", uuid);
+        return Ok(());
+      }
       Some(p) => p,
     };
     println!("Sending {:?} to {:?}", message, uuid);
-    player_connection.unbounded_send(Message::text(serde_json::to_string(message)?))?;
+    let encoded = Message::text(serde_json::to_string(message)?);
+    if let Err(e) = player_connection.unbounded_send(encoded) {
+      println!("Error with unbounded send: {}", e);
+    }
     Ok(())
   }
 }
@@ -104,7 +108,13 @@ async fn simulation_loop(game_server: Arc<Mutex<GameServer>>, room: Room) {
     let mut game_server = game_server.lock().unwrap();
     // The server wants to disconnect the players (e.g. timeout),
     // so close all the connections.
-    let finished = game_server.simulate(elapsed);
+    let finished = match game_server.simulate(elapsed) {
+      Err(e) => {
+        println!("Error handling simulation: {}", e);
+        true
+      }
+      Ok(b) => b,
+    };
     if finished {
       println!("Game finished, done simulating it on the server.");
       let mut room = room.lock().unwrap();
@@ -185,10 +195,11 @@ async fn handle_connection(game_server: Arc<Mutex<GameServer>>, room: Room, sock
   }
 }
 
-fn broadcast(room: Room, msg: &Message) -> Result<(), Box<dyn Error>> {
+fn broadcast(room: Room, msg: &Message) {
   let peers = room.lock().unwrap();
   for (_, recp) in peers.iter() {
-    recp.unbounded_send(msg.clone())?;
+    if let Err(e) = recp.unbounded_send(msg.clone()) {
+      println!("Error with unbounded send: {}", e);
+    }
   }
-  Ok(())
 }

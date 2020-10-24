@@ -1,5 +1,6 @@
 use crate::*;
 use core::fmt::Debug;
+use core::time::Duration;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -14,6 +15,9 @@ pub enum ClientToServerMessage {
   Vote {
     target: VoteTarget,
   },
+  ReportBody {
+    dead_body_color: Color,
+  },
   StartGame(),
 }
 
@@ -27,6 +31,7 @@ impl ClientToServerMessage {
       ClientToServerMessage::Join { .. } => "Join",
       ClientToServerMessage::StartGame() => "StartGame",
       ClientToServerMessage::Vote { .. } => "Vote",
+      ClientToServerMessage::ReportBody { .. } => "ReportBody",
     }
   }
 }
@@ -36,6 +41,7 @@ pub enum ServerToClientMessage {
   Welcome { connection_id: UUID },
   Snapshot(Snapshot),
   Replay(RecordedGame),
+  DisplayMessage(DisplayMessage),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -54,6 +60,7 @@ impl ServerToClientMessage {
       ServerToClientMessage::Welcome { .. } => "Welcome",
       ServerToClientMessage::Snapshot(_) => "Snapshot",
       ServerToClientMessage::Replay(_) => "Replay",
+      ServerToClientMessage::DisplayMessage(_) => "DisplayMessage",
     }
   }
 }
@@ -90,11 +97,38 @@ pub struct Disconnected {
   pub uuid: UUID,
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PlayerStartInfo {
   pub team: Team,
   pub tasks: Vec<Task>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DisplayMessage {
+  pub message: String,
+  pub duration: Duration,
+  pub delay_before_show: Duration,
+}
+impl DisplayMessage {
+  pub fn pass_time(&mut self, elapsed: Duration) {
+    if self.delay_before_show != Duration::from_secs(0) {
+      self.delay_before_show = self
+        .delay_before_show
+        .checked_sub(elapsed)
+        .unwrap_or_else(|| Duration::from_secs(0));
+      return;
+    }
+    self.duration = self
+      .duration
+      .checked_sub(elapsed)
+      .unwrap_or_else(|| Duration::from_secs(0));
+  }
+  pub fn is_expired(&self) -> bool {
+    self.duration == Duration::from_secs(0)
+  }
+  pub fn ready_to_display(&self) -> bool {
+    self.delay_before_show == Duration::from_secs(0)
+  }
 }
 
 impl Default for PlayerStartInfo {

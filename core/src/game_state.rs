@@ -1,8 +1,11 @@
 use crate::*;
 use core::time::Duration;
 use rand::Rng;
+use serde::de::{self, Visitor};
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -20,6 +23,7 @@ pub struct Settings {
   pub speed: f64,
   pub kill_distance: f64,
   pub task_distance: f64,
+  pub report_distance: f64,
   pub voting_time: Duration,
 }
 impl Default for Settings {
@@ -28,6 +32,7 @@ impl Default for Settings {
       speed: 2.0,
       task_distance: 32.0,
       kill_distance: 64.0,
+      report_distance: 96.0,
       voting_time: Duration::from_secs(120),
     }
   }
@@ -64,6 +69,10 @@ impl GameState {
               }
             }
           }
+          console_log!("Day is done, now it's night!");
+          self.check_for_victories();
+          self.bodies.clear();
+          self.place_players_around_table();
           // Now it's night!
           self.status = GameStatus::Playing(PlayState::Night);
         }
@@ -74,6 +83,18 @@ impl GameState {
     }
 
     self.status.finished()
+  }
+
+  pub fn place_players_around_table(&mut self) {
+    let num_players = self.players.len() as f64;
+    for (i, (_, p)) in self.players.iter_mut().enumerate() {
+      let offset = ((i as f64) / num_players) * 2.0 * std::f64::consts::PI;
+      p.position = Position {
+        x: 275.0 + (100.0 * offset.sin()),
+        y: 275.0 + (100.0 * offset.cos()),
+      };
+      p.speed = Speed::default();
+    }
   }
 
   fn is_day_over(&self, day_state: &DayState) -> bool {
@@ -145,6 +166,7 @@ impl GameState {
       }
     }
     self.status = GameStatus::Playing(PlayState::Night);
+    self.place_players_around_table();
     Ok(())
   }
 
@@ -202,16 +224,27 @@ impl GameState {
     }
   }
 
+  fn check_for_victories(&mut self) {
+    match self.status {
+      GameStatus::Connecting
+      | GameStatus::Disconnected
+      | GameStatus::Lobby
+      | GameStatus::Won(_) => return,
+      GameStatus::Playing(_) => (),
+    }
+    // The game might be over because the crew has won!
+    self.check_for_crew_win();
+    // The game might be over because the impostors have won D:
+    self.check_for_impostor_win();
+  }
+
   pub fn handle_disconnection(&mut self, disconnected_player: UUID) {
     self.players.remove(&disconnected_player);
     // The game might be over, because we're out of players
     if self.players.is_empty() {
       self.status = GameStatus::Disconnected;
     }
-    // The game might be over because the crew has won!
-    self.check_for_crew_win();
-    // The game might be over because the impostors have won D:
-    self.check_for_impostor_win();
+    self.check_for_victories();
     // We might be voting, in which case we want to remove all votes for the
     // disconnected player, so that players can vote for someone else if they wish.
     if let GameStatus::Playing(PlayState::Day(day)) = &mut self.status {
@@ -236,7 +269,7 @@ pub const HEIGHT: f64 = 768.0;
 
 // We don't use a real UUID impl because getting randomness in the browser
 // is different than the server, and I got a compiler error about it.
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UUID {
   v: [u8; 16],
 }
@@ -245,7 +278,7 @@ pub struct UUID {
 impl Display for UUID {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     for byte in self.v.iter() {
-      write!(fmt, "{:x?}", byte)?;
+      write!(fmt, "{:02x?}", byte)?;
     }
     Ok(())
   }
@@ -254,7 +287,7 @@ impl Display for UUID {
 impl Debug for UUID {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     for byte in self.v.iter() {
-      write!(fmt, "{:x?}", byte)?;
+      write!(fmt, "{:02x?}", byte)?;
     }
     Ok(())
   }
@@ -263,6 +296,60 @@ impl Debug for UUID {
 impl UUID {
   pub fn random() -> UUID {
     UUID { v: rand::random() }
+  }
+}
+
+impl Serialize for UUID {
+  fn serialize<S>(
+    &self,
+    serializer: S,
+  ) -> Result<<S as serde::Serializer>::Ok, <S as serde::Serializer>::Error>
+  where
+    S: serde::Serializer,
+  {
+    serializer.serialize_str(&format!("{}", self))
+  }
+}
+struct UUIDVisitor;
+impl<'de> Visitor<'de> for UUIDVisitor {
+  type Value = UUID;
+  fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    formatter.write_str("a 32 character long hex string")
+  }
+
+  fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+  where
+    E: de::Error,
+  {
+    if value.len() != 32 {
+      return Err(E::custom(format!(
+        "expected UUID string to be len 32, was {}",
+        value.len()
+      )));
+    }
+    let mut bytes = [0; 16];
+    for (i, byte) in bytes.iter_mut().enumerate() {
+      let si = i * 2;
+      let hex_byte = &value[si..si + 2];
+      *byte = match u8::from_str_radix(hex_byte, 16) {
+        Ok(v) => v,
+        Err(_) => {
+          return Err(E::custom(format!(
+            "expected hex, but found {} at offset {}",
+            hex_byte, si
+          )))
+        }
+      }
+    }
+    Ok(UUID { v: bytes })
+  }
+}
+impl<'de> Deserialize<'de> for UUID {
+  fn deserialize<D>(deserializer: D) -> Result<UUID, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    deserializer.deserialize_str(UUIDVisitor)
   }
 }
 
@@ -293,7 +380,7 @@ pub struct StartInfo {
   pub assignments: Vec<(UUID, PlayerStartInfo)>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Speed {
   pub dx: f64,
   pub dy: f64,
@@ -308,6 +395,9 @@ pub enum Color {
   White,
   Black,
   Green,
+  Yellow,
+  Purple,
+  Gray,
 }
 
 impl Color {
@@ -320,6 +410,9 @@ impl Color {
       Color::White,
       Color::Black,
       Color::Green,
+      Color::Yellow,
+      Color::Purple,
+      Color::Gray,
     ]
   }
 
@@ -332,6 +425,9 @@ impl Color {
       Color::White => "#ffffff",
       Color::Black => "#000000",
       Color::Green => "#01ff02",
+      Color::Yellow => "#ffff66",
+      Color::Purple => "#8a2be2",
+      Color::Gray => "#333333",
     }
   }
 
@@ -377,7 +473,7 @@ impl Player {
       impostor: false,
       // 6 random tasks
       tasks: vec![],
-      speed: Speed { dx: 0.0, dy: 0.0 },
+      speed: Speed::default(),
     }
   }
 
@@ -408,6 +504,16 @@ impl GameStatus {
         .time_remaining
         .checked_sub(elapsed)
         .unwrap_or_else(|| Duration::from_secs(0));
+    }
+  }
+
+  pub fn is_same_kind(&self, other: &GameStatus) -> bool {
+    match self {
+      GameStatus::Connecting => matches!(other, GameStatus::Connecting),
+      GameStatus::Lobby => matches!(other, GameStatus::Lobby),
+      GameStatus::Playing(_) => matches!(other, GameStatus::Playing(_)),
+      GameStatus::Won(_) => matches!(other, GameStatus::Won(_)),
+      GameStatus::Disconnected => matches!(other, GameStatus::Disconnected),
     }
   }
 }

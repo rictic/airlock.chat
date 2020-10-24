@@ -1,6 +1,7 @@
 #![cfg(test)]
+use instant::Duration;
+
 use crate::*;
-use core::time::Duration;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;

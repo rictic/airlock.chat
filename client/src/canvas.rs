@@ -1,5 +1,5 @@
 use crate::*;
-use core::time::Duration;
+use instant::Duration;
 use rust_us_core::HEIGHT;
 use rust_us_core::WIDTH;
 use rust_us_core::*;

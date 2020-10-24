@@ -1,6 +1,6 @@
+use instant::Duration;
+
 use crate::*;
-use core::time::Duration;
-use std::collections::BTreeSet;
 
 // The state of user input at some point in time. i.e. what buttons is
 // the user holding down?
@@ -406,8 +406,9 @@ impl GameAsPlayer {
         self.update_status(status);
         self.state.bodies = bodies;
         // handle disconnections
-        let server_uuids: BTreeSet<_> = players.iter().map(|p| p.uuid).collect();
-        let local_uuids: BTreeSet<_> = self.state.players.iter().map(|(u, _)| *u).collect();
+        let server_uuids: std::collections::BTreeSet<_> = players.iter().map(|p| p.uuid).collect();
+        let local_uuids: std::collections::BTreeSet<_> =
+          self.state.players.iter().map(|(u, _)| *u).collect();
         for uuid in local_uuids.difference(&server_uuids) {
           self.state.players.remove(uuid);
         }

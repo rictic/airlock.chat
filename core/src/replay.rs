@@ -1,6 +1,6 @@
 use crate::ServerToClientMessage;
 use crate::*;
-use core::time::Duration;
+use instant::Duration;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;

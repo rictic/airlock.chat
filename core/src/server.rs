@@ -1,9 +1,6 @@
 use crate::replay::MaybeDecisionIfPlayingBackRecording::*;
 use crate::replay::{RecordingEntry, RecordingEvent};
 use crate::*;
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::time::Duration;
 
@@ -244,7 +241,7 @@ impl GameServer {
         }
         // oh shit it's on
         self.state.status = GameStatus::Playing(PlayState::Day(DayState {
-          votes: BTreeMap::new(),
+          votes: std::collections::BTreeMap::new(),
           time_remaining: self.state.settings.voting_time,
         }));
         self.broadcast_snapshot()?;
@@ -286,7 +283,7 @@ impl GameServer {
             }
             // ok, it's a new player, and we have room for them. if their color is
             // already taken, give them a new one.
-            let taken_colors: BTreeSet<Color> =
+            let taken_colors: std::collections::BTreeSet<Color> =
               self.state.players.iter().map(|(_, p)| p.color).collect();
             let add_player;
             let mut color = preferred_color;
@@ -369,7 +366,7 @@ impl GameServer {
         // If it's day, and the sender hasn't voted yet, record their vote.
         if let GameStatus::Playing(PlayState::Day(DayState { votes, .. })) = &mut self.state.status
         {
-          if let Entry::Vacant(o) = votes.entry(sender) {
+          if let std::collections::btree_map::Entry::Vacant(o) = votes.entry(sender) {
             o.insert(*target);
           }
         }

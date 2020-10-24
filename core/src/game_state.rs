@@ -1,20 +1,18 @@
+use core::fmt;
+
 use crate::*;
-use core::time::Duration;
+use instant::Duration;
 use rand::Rng;
 use serde::de::{self, Visitor};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::fmt;
-use std::fmt::Debug;
-use std::fmt::Display;
 
 // The full game state
 #[derive(PartialEq, Clone, Debug)]
 pub struct GameState {
   pub status: GameStatus,
   pub settings: Settings,
-  pub players: BTreeMap<UUID, Player>,
+  pub players: std::collections::BTreeMap<UUID, Player>,
   pub bodies: Vec<DeadBody>,
 }
 
@@ -49,7 +47,7 @@ impl GameState {
     GameState {
       status: GameStatus::Connecting,
       settings: Settings::default(),
-      players: BTreeMap::new(),
+      players: std::collections::BTreeMap::new(),
       bodies: Vec::new(),
     }
   }
@@ -131,7 +129,7 @@ impl GameState {
   }
 
   pub fn get_game_start_info(&self) -> StartInfo {
-    let mut assignments: BTreeMap<UUID, PlayerStartInfo> = self
+    let mut assignments: std::collections::BTreeMap<UUID, PlayerStartInfo> = self
       .players
       .keys()
       .map(|k| (*k, PlayerStartInfo::default()))
@@ -275,7 +273,7 @@ pub struct UUID {
 }
 
 // Display UUIDs as hex
-impl Display for UUID {
+impl std::fmt::Display for UUID {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     for byte in self.v.iter() {
       write!(fmt, "{:02x?}", byte)?;
@@ -284,7 +282,7 @@ impl Display for UUID {
   }
 }
 
-impl Debug for UUID {
+impl std::fmt::Debug for UUID {
   fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
     for byte in self.v.iter() {
       write!(fmt, "{:02x?}", byte)?;
@@ -526,14 +524,15 @@ pub enum PlayState {
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct DayState {
-  pub votes: BTreeMap<UUID, VoteTarget>,
+  pub votes: std::collections::BTreeMap<UUID, VoteTarget>,
   pub time_remaining: Duration,
 }
 
 impl DayState {
   pub fn determine_winner_of_election(&self) -> VoteTarget {
     // Count the votes by the target.
-    let mut vote_count: BTreeMap<VoteTarget, u16> = BTreeMap::new();
+    let mut vote_count: std::collections::BTreeMap<VoteTarget, u16> =
+      std::collections::BTreeMap::new();
     for (_, target) in self.votes.iter() {
       *vote_count.entry(*target).or_insert(0) += 1;
     }

@@ -1,6 +1,6 @@
 use crate::*;
 use core::fmt::Debug;
-use core::time::Duration;
+use instant::Duration;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -90,7 +90,6 @@ pub struct Disconnected {
   pub uuid: UUID,
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PlayerStartInfo {
   pub team: Team,

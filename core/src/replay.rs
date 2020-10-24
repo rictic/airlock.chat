@@ -1,10 +1,10 @@
 use crate::ServerToClientMessage;
 use crate::*;
 use core::time::Duration;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RecordedGame {
@@ -45,7 +45,6 @@ pub enum ServerDecision {
   StartInfo(StartInfo),
   NewPlayerPosition(Position),
 }
-
 
 struct PlaybackBroadcaster {
   pending_messages: Arc<Mutex<Vec<ServerToClientMessage>>>,

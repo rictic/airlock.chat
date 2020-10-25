@@ -61,23 +61,25 @@ impl Camera {
     (x, y)
   }
 
-  fn get_global_camera(canvas: &Canvas) -> Self {
+  fn get_global_camera(dimensions: (f64, f64)) -> Self {
+    let (width, height) = dimensions;
     Self {
       // this isn't the right zoom, it should be relative to
       // canvas width and height
       zoom: 1.0,
       left: 0.0,
       top: 0.0,
-      right: canvas.width,
-      bottom: canvas.height,
+      right: width,
+      bottom: height,
     }
   }
 
-  fn centered_on_point(canvas: &Canvas, center: Position) -> Self {
+  fn centered_on_point(dimensions: (f64, f64), center: Position) -> Self {
     // Likewise, this zoom shouldn't be constant
     let zoom = 2.0;
-    let map_width = canvas.width / zoom;
-    let map_height = canvas.height / zoom;
+    let (width, height) = dimensions;
+    let map_width = width / zoom;
+    let map_height = height / zoom;
     // Players see the area around them
     Camera {
       zoom,
@@ -87,7 +89,59 @@ impl Camera {
       bottom: center.y + (map_height / 2.0),
     }
   }
+
+  fn roughly_track_object(&mut self, (width, height): (f64, f64), tracked: Position) {
+    // This is what this article calls the 'camera-window' system
+    // https://www.gamasutra.com/blogs/ItayKeren/20150511/243083/Scroll_Back_The_Theory_and_Practice_of_Cameras_in_SideScrollers.php
+
+    // This zoom shouldn't be constant
+    self.zoom = 2.0;
+
+    // Imagine a smallish rectangle in the center of the screen.
+    // If the tracked object stays within that rectangle, the camera stays
+    // fixed. When it leaves the rectangle, the camera moves the minimal amount
+    // to keep it in there.
+    let (dx, dy) = {
+      let x_center = width / 2.0;
+      let y_center = height / 2.0;
+      let bounding_left = x_center - (width * 0.075);
+      let bounding_right = x_center + (width * 0.075);
+      let bounding_top = y_center - (height * 0.075);
+      let bounding_bottom = y_center + (height * 0.075);
+
+      let (x, y) = self.offset(tracked.x, tracked.y);
+      let mut dx = 0.0;
+
+      if x < bounding_left {
+        dx = x - (bounding_left);
+      } else if x > bounding_right {
+        dx = x - (bounding_right - 1.0);
+      }
+      let mut dy = 0.0;
+      if y < bounding_top {
+        dy = y - bounding_top;
+      } else if y > bounding_bottom {
+        dy = y - bounding_bottom;
+      }
+      (dx / self.zoom, dy / self.zoom)
+    };
+
+    // The player has teleported? Center the camera on them.
+    if dx > 30.0 || dy > 30.0 {
+      *self = Camera::centered_on_point((width, height), tracked);
+      return;
+    }
+    if dx != 0.0 {
+      self.left = self.left + dx;
+      self.right = self.right + dx;
+    }
+    if dy != 0.0 {
+      self.top = self.top + dy;
+      self.bottom = self.bottom + dy;
+    }
+  }
 }
+
 impl Canvas {
   pub fn new(
     context: web_sys::CanvasRenderingContext2d,
@@ -96,13 +150,7 @@ impl Canvas {
     Canvas {
       context,
       canvas_element,
-      camera: Camera {
-        top: 0.0,
-        left: 0.0,
-        bottom: HEIGHT,
-        right: WIDTH,
-        zoom: 1.0,
-      },
+      camera: Camera::get_global_camera((WIDTH, HEIGHT)),
       width: WIDTH,
       height: HEIGHT,
     }
@@ -147,7 +195,7 @@ impl Canvas {
         self.draw_night(&game)?;
       }
       GameStatus::Playing(PlayState::Day(n)) => {
-        self.camera = Camera::get_global_camera(self);
+        self.camera = Camera::get_global_camera((self.width, self.height));
         let voting_ui_state = match &game.contextual_state {
           ContextualState::Voting(v) => Some(v),
           _ => None,
@@ -192,14 +240,18 @@ impl Canvas {
     self.context.rect(0.0, 0.0, self.width, self.height);
     self.context.set_fill_style(&JsValue::from_str("#f3f3f3"));
     self.context.fill();
-    // Center the camera on the player
-    self.camera = match game.local_player() {
+    match game.local_player() {
       None => {
         // the spectator sees all
-        Camera::get_global_camera(self)
+        self.camera = Camera::get_global_camera((self.width, self.height))
       }
-      Some(p) => Camera::centered_on_point(self, p.position),
-    };
+      Some(p) => {
+        // Center the camera on the player
+        self
+          .camera
+          .roughly_track_object((self.width, self.height), p.position);
+      }
+    }
 
     self.context.set_line_width(self.camera.zoom);
 

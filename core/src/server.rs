@@ -234,7 +234,7 @@ impl GameServer {
             player
           }
         };
-        let distance_between_reporter_and_body = reporter.position.distance(body.position);
+        let distance_between_reporter_and_body = reporter.position.distance(&body.position);
         let slop_for_latency = 32.0;
         if distance_between_reporter_and_body
           > self.state.settings.report_distance + slop_for_latency

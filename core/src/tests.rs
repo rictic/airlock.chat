@@ -8,7 +8,9 @@ use std::sync::Mutex;
 
 #[test]
 fn pythagoras_was_right() {
-  assert!((5.0 - (Position { x: 3.0, y: 0.0 }).distance(Position { x: 0.0, y: 4.0 })).abs() < 0.01);
+  assert!(
+    (5.0 - (Position { x: 3.0, y: 0.0 }).distance(&Position { x: 0.0, y: 4.0 })).abs() < 0.01
+  );
 }
 
 struct TestEnvironment {

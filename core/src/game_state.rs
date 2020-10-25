@@ -122,14 +122,31 @@ impl GameState {
       (elapsed.as_nanos() as f64) / (Duration::from_millis(16).as_nanos() as f64);
 
     for (_, player) in self.players.iter_mut() {
-      let Speed { dx, dy } = player.speed;
+      if player.speed.dx == 0.0 && player.speed.dy == 0.0 {
+        continue;
+      }
 
-      player.position.x = (player.position.x + dx * time_steps_passed)
-        .min(self.map.width - Player::radius())
-        .max(0.0 + Player::radius());
-      player.position.y = (player.position.y + dy * time_steps_passed)
-        .min(self.map.height - Player::radius())
-        .max(0.0 + Player::radius());
+      let mut movement_vector = Speed {
+        dx: player.speed.dx * time_steps_passed,
+        dy: player.speed.dy * time_steps_passed,
+      };
+
+      for shape in self.map.static_geometry.iter() {
+        movement_vector = shape.collide(player.position, Player::radius(), movement_vector);
+      }
+
+      // Advance the player
+      let new_pos = Position {
+        x: player.position.x + movement_vector.dx * time_steps_passed,
+        y: player.position.y + movement_vector.dy * time_steps_passed,
+      };
+
+      // Bound their new position within within the map
+      let new_pos = self
+        .map
+        .constrain_circle_within_bounds(new_pos, Player::radius());
+
+      player.position = new_pos;
     }
   }
 
@@ -274,6 +291,7 @@ impl GameState {
 pub struct Map {
   width: f64,
   height: f64,
+  pub static_geometry: Vec<Shape>,
 }
 
 impl Map {
@@ -281,6 +299,24 @@ impl Map {
     Map {
       width: 1024.0,
       height: 768.0,
+      static_geometry: vec![
+        // conference table
+        Shape::Circle {
+          radius: 75.0,
+          center: Position { x: 275.0, y: 275.0 },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#358".into(),
+        },
+        // nega table
+        Shape::Circle {
+          radius: 62.0,
+          center: Position { x: 875.0, y: 505.0 },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#a22".into(),
+        },
+      ],
     }
   }
   pub fn width(&self) -> f64 {
@@ -288,6 +324,81 @@ impl Map {
   }
   pub fn height(&self) -> f64 {
     self.height
+  }
+  pub fn constrain_circle_within_bounds(&self, center: Position, radius: f64) -> Position {
+    Position {
+      x: center.x.min(self.width - radius).max(0.0 + radius),
+      y: center
+        .y
+        .min(self.height - Player::radius())
+        .max(0.0 + Player::radius()),
+    }
+  }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Shape {
+  Circle {
+    radius: f64,
+    center: Position,
+    fill_color: String,
+    outline_width: f64,
+    outline_color: String,
+  },
+}
+
+impl Shape {
+  pub fn collide(&self, position: Position, radius: f64, movement_vector: Speed) -> Speed {
+    match self {
+      Shape::Circle {
+        radius: self_radius,
+        center: self_center,
+        ..
+      } => {
+        // Circle on circle collision
+        // https://www.gamasutra.com/view/feature/131424/pool_hall_lessons_fast_accurate_.php?print=1
+
+        // Quick check to see whether, given starting locations and the magnitude of the
+        // movement these two could collide if the player moved directly at this shape.
+        let sum_radii = radius + self_radius;
+        let dist = position.distance(self_center) - sum_radii;
+        if movement_vector.magnitude() < dist {
+          // Too far away, early exit.
+          return movement_vector;
+        }
+
+        let n: Speed = movement_vector.normalize();
+
+        // Determine if A is moving towards B. If not, they're not colliding
+        let c = self_center.sub(position);
+        let d = n.dot_product(&c);
+        if d <= 0.0 {
+          return movement_vector;
+        }
+
+        let length_c = c.magnitude();
+        let f = (length_c * length_c) - (d * d);
+        let radii_squared = sum_radii * sum_radii;
+        if f >= radii_squared {
+          // the closest point on the movement vector is still too far away to collide
+          return movement_vector;
+        }
+
+        let t = radii_squared - f;
+        if t < 0.0 {
+          return movement_vector;
+        }
+
+        let distance = d - t.sqrt();
+        let movement_magnitude = movement_vector.magnitude();
+
+        if movement_magnitude < distance {
+          return movement_vector;
+        }
+
+        n.times(distance)
+      }
+    }
   }
 }
 
@@ -377,24 +488,67 @@ impl<'de> Deserialize<'de> for UUID {
   }
 }
 
+pub trait Vector2d {
+  fn x(&self) -> f64;
+  fn y(&self) -> f64;
+  fn make_from_point(x: f64, y: f64) -> Self;
+
+  fn distance(&self, other: &impl Vector2d) -> f64 {
+    ((self.x() - other.x()).powi(2) + (self.y() - other.y()).powi(2))
+      .sqrt()
+      .abs()
+  }
+
+  fn magnitude(&self) -> f64 {
+    self.distance(&Position { x: 0.0, y: 0.0 })
+  }
+
+  fn dot_product(&self, other: &impl Vector2d) -> f64 {
+    (self.x() * other.x()) + (self.y() * other.y())
+  }
+
+  fn normalize<Ret: Vector2d>(&self) -> Ret {
+    let magnitude = self.magnitude();
+    Ret::make_from_point(self.x() / magnitude, self.y() / magnitude)
+  }
+
+  fn times<Ret: Vector2d>(&self, scalar: f64) -> Ret {
+    Ret::make_from_point(self.x() * scalar, self.y() * scalar)
+  }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Position {
   pub x: f64,
   pub y: f64,
 }
 
-impl Position {
-  pub fn distance(self, other: Position) -> f64 {
-    ((self.x - other.x).powi(2) + (self.y - other.y).powi(2))
-      .sqrt()
-      .abs()
+impl Vector2d for Position {
+  fn x(&self) -> f64 {
+    self.x
+  }
+  fn y(&self) -> f64 {
+    self.y
   }
 
+  fn make_from_point(x: f64, y: f64) -> Self {
+    Self { x, y }
+  }
+}
+
+impl Position {
   pub fn random(map: &Map) -> Position {
     let mut rng = rand::thread_rng();
     Position {
       x: rng.gen_range(30.0, map.width - 30.0),
       y: rng.gen_range(30.0, map.height - 30.0),
+    }
+  }
+
+  pub fn sub(self, other: Position) -> impl Vector2d {
+    Position {
+      x: self.x - other.x,
+      y: self.y - other.y,
     }
   }
 }
@@ -408,6 +562,20 @@ pub struct StartInfo {
 pub struct Speed {
   pub dx: f64,
   pub dy: f64,
+}
+
+impl Vector2d for Speed {
+  fn x(&self) -> f64 {
+    self.dx
+  }
+
+  fn y(&self) -> f64 {
+    self.dy
+  }
+
+  fn make_from_point(x: f64, y: f64) -> Self {
+    Self { dx: x, dy: y }
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]

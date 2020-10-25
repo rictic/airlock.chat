@@ -1,3 +1,4 @@
+use crate::game_state::Vector2d;
 use crate::*;
 use core::time::Duration;
 use std::collections::BTreeSet;
@@ -315,7 +316,7 @@ impl GameAsPlayer {
         continue;
       }
 
-      let distance = position.distance(player.position);
+      let distance = position.distance(&player.position);
       if distance < closest_distance {
         killed_player = Some(DeadBody {
           position: player.position,
@@ -347,7 +348,7 @@ impl GameAsPlayer {
 
     let mut finished_task: Option<FinishedTask> = None;
     for (index, task) in local_player.tasks.iter().enumerate() {
-      let distance = position.distance(task.position);
+      let distance = position.distance(&task.position);
       if distance < closest_distance {
         finished_task = Some(FinishedTask { index });
         closest_distance = distance;
@@ -368,7 +369,7 @@ impl GameAsPlayer {
     let mut closest_distance = self.state.settings.report_distance;
     let mut nearest_body_color: Option<Color> = None;
     for body in self.state.bodies.iter() {
-      let distance = position.distance(body.position);
+      let distance = position.distance(&body.position);
       if distance < closest_distance {
         nearest_body_color = Some(body.color);
         closest_distance = distance;
@@ -439,7 +440,7 @@ impl GameAsPlayer {
               }
               // Avoid jitter by ignoring position updates (and instead use local reconning
               // based on speeds) unless the distance is greater than some small amount.
-              if position.distance(local_player.position) > 30.0 {
+              if position.distance(&local_player.position) > 30.0 {
                 local_player.position = position;
               }
             }

@@ -276,6 +276,41 @@ impl Canvas {
       }
     }
 
+    {
+      let zero = self.camera.offset(0.0, 0.0);
+      if zero.0 > 0.0 {
+        self.context.begin_path();
+        self.context.rect(0.0, 0.0, zero.0, self.height);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+      if zero.1 > 0.0 {
+        self.context.begin_path();
+        self.context.rect(0.0, 0.0, self.width, zero.1);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+      let bot_right = self
+        .camera
+        .offset(game.state.map.width(), game.state.map.height());
+      if bot_right.0 < self.width {
+        self.context.begin_path();
+        self
+          .context
+          .rect(bot_right.0, 0.0, self.width - bot_right.0, self.height);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+      if bot_right.1 < self.height {
+        self.context.begin_path();
+        self
+          .context
+          .rect(0.0, bot_right.1, self.width, self.height - bot_right.1);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+    }
+
     self.context.set_line_width(self.camera.zoom);
 
     // Draw the conference table
@@ -314,7 +349,7 @@ impl Canvas {
   fn draw_player(&self, player: &Player) -> Result<(), &'static str> {
     // draw circle
     self.context.begin_path();
-    let radius = 10.0;
+    let radius = Player::radius();
     self.move_to(player.position.x + radius, player.position.y);
     self
       .arc(

@@ -355,7 +355,6 @@ impl Shape {
         let sum_radii = radius + self_radius;
         let dist = position.distance(self_center) - sum_radii;
         if movement_vector.magnitude() < dist {
-          console_log!("Far from the table");
           // Too far away, early exit.
           return movement_vector;
         }
@@ -366,7 +365,6 @@ impl Shape {
         let c = self_center.sub(position);
         let d = n.dot_product(&c);
         if d <= 0.0 {
-          console_log!("Moving away from the table");
           return movement_vector;
         }
 
@@ -375,7 +373,6 @@ impl Shape {
         let radii_squared = sum_radii * sum_radii;
         if f >= radii_squared {
           // the closest point on the movement vector is still too far away to collide
-          console_log!("The closest point on the movement vector to the table is still too far!");
           return movement_vector;
         }
 
@@ -388,13 +385,9 @@ impl Shape {
         let movement_magnitude = movement_vector.magnitude();
 
         if movement_magnitude < distance {
-          console_log!(
-            "The direction isn't quite right to collide with the table, but it was close!"
-          );
           return movement_vector;
         }
 
-        console_log!("Multiplying the normalized vector {:?} with the distance before collision {} to get {:?}", n, distance, n.times::<Speed>(distance));
         n.times(distance)
       }
     }

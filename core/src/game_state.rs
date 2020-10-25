@@ -125,11 +125,11 @@ impl GameState {
       let Speed { dx, dy } = player.speed;
 
       player.position.x = (player.position.x + dx * time_steps_passed)
-        .min(self.map.width)
-        .max(0.0);
+        .min(self.map.width - Player::radius())
+        .max(0.0 + Player::radius());
       player.position.y = (player.position.y + dy * time_steps_passed)
-        .min(self.map.height)
-        .max(0.0);
+        .min(self.map.height - Player::radius())
+        .max(0.0 + Player::radius());
     }
   }
 
@@ -282,6 +282,12 @@ impl Map {
       width: 1024.0,
       height: 768.0,
     }
+  }
+  pub fn width(&self) -> f64 {
+    self.width
+  }
+  pub fn height(&self) -> f64 {
+    self.height
   }
 }
 
@@ -497,6 +503,10 @@ impl Player {
 
   pub fn eligable_to_vote(&self) -> bool {
     !self.dead
+  }
+
+  pub fn radius() -> f64 {
+    10.0
   }
 }
 

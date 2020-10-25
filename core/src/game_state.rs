@@ -308,6 +308,14 @@ impl Map {
           outline_color: "#000".into(),
           fill_color: "#358".into(),
         },
+        // nega table
+        Shape::Circle {
+          radius: 62.0,
+          center: Position { x: 875.0, y: 505.0 },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#a22".into(),
+        },
       ],
     }
   }

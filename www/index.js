@@ -29,11 +29,11 @@ async function init() {
   const textOutput = document.createElement('div');
   textOutput.style.position = 'absolute';
   textOutput.style.marginLeft = '10px';
+  textOutput.style.fontSize = '12px';
+  textOutput.style.color = '#2c2d';
   document.body.appendChild(textOutput);
   const perf = document.createElement('div');
   textOutput.appendChild(perf);
-  const output = document.createElement('div');
-  textOutput.appendChild(output);
 
   const canvas = document.createElement('canvas');
   canvas.id = 'canvas';
@@ -47,6 +47,7 @@ async function init() {
   const game = wasm.make_game(name);
   let previousFrameTime = performance.now();
   let running = true;
+  let displayPerf = window.localStorage.displayPerf === 'true';
   function drawOneFrame() {
     const timestamp = performance.now();
     const elapsed = timestamp - previousFrameTime;
@@ -57,7 +58,6 @@ async function init() {
     game.draw();
     const afterDraw = performance.now();
     const drawTime = afterDraw - afterSim;
-    let message = game.get_status();
     if (simTimes.length < 100) {
       simTimes.push(simTime);
     } else {
@@ -77,8 +77,11 @@ async function init() {
     let perfMessage = `${(1000 / average(totalTimes)).toFixed(1)}fps [`;
     perfMessage += `${average(simTimes).toFixed(1)}ms sim, `;
     perfMessage += ` ${average(drawTimes).toFixed(1)}ms draw]`;
-    output.innerText = message;
-    perf.innerText = perfMessage;
+    if (displayPerf) {
+      perf.innerText = perfMessage;
+    } else {
+      perf.innerText = '';
+    }
     running = !finished;
     if (!finished) {
       requestAnimationFrame(drawOneFrame);
@@ -97,7 +100,7 @@ async function init() {
   const knownButtons = new Set([
     'w', 'a', 's', 'd', 'q', 'e', 'r', ' ', 'p',
     'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
-    'j', 'k', 'l'
+    'j', 'k', 'l', 'f11'
   ]);
   const heldButtons = {};
   for (const button of knownButtons) {
@@ -125,6 +128,12 @@ async function init() {
   }
   document.addEventListener('keydown', (ev) => {
     const key = ev.key.toLowerCase();
+    if (key == '/') {
+      displayPerf = !displayPerf;
+      window.localStorage.displayPerf = displayPerf;
+      ev.preventDefault();
+      return;
+    }
     if (!knownButtons.has(key)) {
       return;
     }

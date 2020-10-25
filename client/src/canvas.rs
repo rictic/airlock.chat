@@ -1,7 +1,5 @@
 use crate::*;
 use core::time::Duration;
-use rust_us_core::HEIGHT;
-use rust_us_core::WIDTH;
 use rust_us_core::*;
 use std::error::Error;
 use std::f64::consts::PI;
@@ -142,38 +140,63 @@ impl Camera {
   }
 }
 
+struct WindowDimensions {
+  width: f64,
+  height: f64,
+  device_pixel_ratio: f64,
+}
+fn get_window_dimensions() -> Result<WindowDimensions, JsValue> {
+  let window = web_sys::window().ok_or("Could not get window")?;
+  let ratio = window.device_pixel_ratio();
+  let width: f64 = window
+    .inner_width()?
+    .as_f64()
+    .ok_or("Could not inner_width as number?")?;
+  let height = window
+    .inner_height()?
+    .as_f64()
+    .ok_or("Could not inner_height as number?")?;
+  Ok(WindowDimensions {
+    width,
+    height,
+    device_pixel_ratio: ratio,
+  })
+}
+
 impl Canvas {
   pub fn new(
     context: web_sys::CanvasRenderingContext2d,
     canvas_element: web_sys::HtmlCanvasElement,
-  ) -> Canvas {
-    Canvas {
+  ) -> Result<Canvas, JsValue> {
+    let WindowDimensions { width, height, .. } = get_window_dimensions()?;
+    Ok(Canvas {
       context,
       canvas_element,
-      camera: Camera::get_global_camera((WIDTH, HEIGHT)),
-      width: WIDTH,
-      height: HEIGHT,
-    }
+      camera: Camera::get_global_camera((width, height)),
+      width,
+      height,
+    })
   }
 
   pub fn find_in_document() -> Result<Canvas, JsValue> {
     let (canvas_element, context) =
       find_canvas_in_document().map_err(|e| JsValue::from(format!("{}", e)))?;
-    Ok(Canvas::new(context, canvas_element))
+    Canvas::new(context, canvas_element)
   }
 
   fn set_dimensions(&mut self) -> Result<(), JsValue> {
-    let window = web_sys::window().ok_or("Could not get window")?;
-    let ratio = window.device_pixel_ratio();
-    let width: f64 = window.inner_width()?.as_f64().unwrap();
-    let height = window.inner_height()?.as_f64().unwrap();
+    let WindowDimensions {
+      width,
+      height,
+      device_pixel_ratio,
+    } = get_window_dimensions()?;
     self
       .canvas_element
-      .set_width((width * ratio).floor() as u32);
+      .set_width((width * device_pixel_ratio).floor() as u32);
     self
       .canvas_element
-      .set_height((height * ratio).floor() as u32);
-    self.context.scale(ratio, ratio)?;
+      .set_height((height * device_pixel_ratio).floor() as u32);
+    self.context.scale(device_pixel_ratio, device_pixel_ratio)?;
     self.width = width;
     self.height = height;
     Ok(())
@@ -253,6 +276,41 @@ impl Canvas {
       }
     }
 
+    {
+      let zero = self.camera.offset(0.0, 0.0);
+      if zero.0 > 0.0 {
+        self.context.begin_path();
+        self.context.rect(0.0, 0.0, zero.0, self.height);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+      if zero.1 > 0.0 {
+        self.context.begin_path();
+        self.context.rect(0.0, 0.0, self.width, zero.1);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+      let bot_right = self
+        .camera
+        .offset(game.state.map.width(), game.state.map.height());
+      if bot_right.0 < self.width {
+        self.context.begin_path();
+        self
+          .context
+          .rect(bot_right.0, 0.0, self.width - bot_right.0, self.height);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+      if bot_right.1 < self.height {
+        self.context.begin_path();
+        self
+          .context
+          .rect(0.0, bot_right.1, self.width, self.height - bot_right.1);
+        self.context.set_fill_style(&"#000".into());
+        self.context.fill();
+      }
+    }
+
     self.context.set_line_width(self.camera.zoom);
 
     // Draw the conference table
@@ -291,7 +349,7 @@ impl Canvas {
   fn draw_player(&self, player: &Player) -> Result<(), &'static str> {
     // draw circle
     self.context.begin_path();
-    let radius = 10.0;
+    let radius = Player::radius();
     self.move_to(player.position.x + radius, player.position.y);
     self
       .arc(

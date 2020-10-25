@@ -131,11 +131,13 @@ impl DisplayMessage {
   }
 }
 
-impl Default for PlayerStartInfo {
-  fn default() -> Self {
+impl PlayerStartInfo {
+  pub fn new(map: &Map) -> Self {
     Self {
       team: Team::Crew,
-      tasks: (0..6).map(|_| Task::default()).collect(),
+      tasks: (0..6)
+        .map(|_| Task::random_positioned_in_map(map))
+        .collect(),
     }
   }
 }

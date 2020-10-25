@@ -9,15 +9,6 @@ use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
 
-// The full game state
-#[derive(PartialEq, Clone, Debug)]
-pub struct GameState {
-  pub status: GameStatus,
-  pub settings: Settings,
-  pub players: BTreeMap<UUID, Player>,
-  pub bodies: Vec<DeadBody>,
-}
-
 #[derive(PartialEq, Clone, Debug)]
 pub struct Settings {
   pub speed: f64,
@@ -44,6 +35,16 @@ impl Default for GameState {
   }
 }
 
+// The full game state
+#[derive(PartialEq, Clone, Debug)]
+pub struct GameState {
+  pub status: GameStatus,
+  pub settings: Settings,
+  pub map: Map,
+  pub players: BTreeMap<UUID, Player>,
+  pub bodies: Vec<DeadBody>,
+}
+
 impl GameState {
   pub fn new() -> Self {
     GameState {
@@ -51,6 +52,7 @@ impl GameState {
       settings: Settings::default(),
       players: BTreeMap::new(),
       bodies: Vec::new(),
+      map: Map::first_map(),
     }
   }
 
@@ -121,8 +123,13 @@ impl GameState {
 
     for (_, player) in self.players.iter_mut() {
       let Speed { dx, dy } = player.speed;
-      player.position.x += dx * time_steps_passed;
-      player.position.y += dy * time_steps_passed;
+
+      player.position.x = (player.position.x + dx * time_steps_passed)
+        .min(self.map.width - Player::radius())
+        .max(0.0 + Player::radius());
+      player.position.y = (player.position.y + dy * time_steps_passed)
+        .min(self.map.height - Player::radius())
+        .max(0.0 + Player::radius());
     }
   }
 
@@ -134,7 +141,7 @@ impl GameState {
     let mut assignments: BTreeMap<UUID, PlayerStartInfo> = self
       .players
       .keys()
-      .map(|k| (*k, PlayerStartInfo::default()))
+      .map(|k| (*k, PlayerStartInfo::new(&self.map)))
       .collect();
     let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
     for (i, (_uuid, player_start_info)) in assignments.iter_mut().enumerate() {
@@ -263,9 +270,26 @@ impl GameState {
   }
 }
 
-// This is not the proper way to handle dimensions...
-pub const WIDTH: f64 = 1024.0;
-pub const HEIGHT: f64 = 768.0;
+#[derive(Debug, PartialEq, Clone)]
+pub struct Map {
+  width: f64,
+  height: f64,
+}
+
+impl Map {
+  fn first_map() -> Map {
+    Map {
+      width: 1024.0,
+      height: 768.0,
+    }
+  }
+  pub fn width(&self) -> f64 {
+    self.width
+  }
+  pub fn height(&self) -> f64 {
+    self.height
+  }
+}
 
 // We don't use a real UUID impl because getting randomness in the browser
 // is different than the server, and I got a compiler error about it.
@@ -366,11 +390,11 @@ impl Position {
       .abs()
   }
 
-  pub fn random() -> Position {
+  pub fn random(map: &Map) -> Position {
     let mut rng = rand::thread_rng();
     Position {
-      x: rng.gen_range(30.0, WIDTH - 30.0),
-      y: rng.gen_range(30.0, HEIGHT - 30.0),
+      x: rng.gen_range(30.0, map.width - 30.0),
+      y: rng.gen_range(30.0, map.height - 30.0),
     }
   }
 }
@@ -441,11 +465,11 @@ pub struct Task {
   pub position: Position,
   pub finished: bool,
 }
-impl Default for Task {
-  fn default() -> Self {
+impl Task {
+  pub fn random_positioned_in_map(map: &Map) -> Self {
     Self {
       finished: false,
-      position: Position::random(),
+      position: Position::random(map),
     }
   }
 }
@@ -479,6 +503,10 @@ impl Player {
 
   pub fn eligable_to_vote(&self) -> bool {
     !self.dead
+  }
+
+  pub fn radius() -> f64 {
+    10.0
   }
 }
 

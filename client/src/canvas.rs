@@ -236,24 +236,28 @@ impl Canvas {
     self.context.set_text_baseline("middle");
     self.context.set_stroke_style(&JsValue::from("#fff"));
     self.context.set_fill_style(&JsValue::from("#000"));
-    let messages = game
+    let mut messages: Vec<String> = game
       .displayed_messages
       .iter()
       .rev()
       .filter(|m| m.ready_to_display())
-      .enumerate();
-    for (i, message) in messages {
+      .map(|m| m.message.clone())
+      .collect();
+    if game.state.status == GameStatus::Lobby {
+      messages.push(format!(
+        "In the lobby. {}/10 players",
+        game.state.players.len()
+      ));
+      messages.push(format!("Press P to start"));
+    }
+    for (i, message) in messages.into_iter().enumerate() {
       self.context.begin_path();
       let text_pos = (
         30.0,
         self.height - (30.0 + (font_height + 5.0) * (i as f64)),
       );
-      self
-        .context
-        .stroke_text(&message.message, text_pos.0, text_pos.1)?;
-      self
-        .context
-        .fill_text(&message.message, text_pos.0, text_pos.1)?;
+      self.context.stroke_text(&message, text_pos.0, text_pos.1)?;
+      self.context.fill_text(&message, text_pos.0, text_pos.1)?;
     }
     Ok(())
   }

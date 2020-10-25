@@ -121,8 +121,13 @@ impl GameState {
 
     for (_, player) in self.players.iter_mut() {
       let Speed { dx, dy } = player.speed;
-      player.position.x += dx * time_steps_passed;
-      player.position.y += dy * time_steps_passed;
+
+      player.position.x = (player.position.x + dx * time_steps_passed)
+        .min(WIDTH)
+        .max(0.0);
+      player.position.y = (player.position.y + dy * time_steps_passed)
+        .min(HEIGHT)
+        .max(0.0);
     }
   }
 

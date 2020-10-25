@@ -317,10 +317,9 @@ impl Canvas {
 
     self.context.set_line_width(self.camera.zoom);
 
-    // Draw the conference table
-    self.context.set_stroke_style(&JsValue::from_str("#000000"));
-    self.context.set_fill_style(&JsValue::from_str("#358"));
-    self.circle(275.0, 275.0, 75.0)?;
+    for shape in game.state.map.static_geometry.iter() {
+      self.draw_shape(shape)?;
+    }
 
     let show_dead_people = match game.local_player() {
       None => true,
@@ -347,6 +346,32 @@ impl Canvas {
       }
     }
 
+    Ok(())
+  }
+
+  fn draw_shape(&self, shape: &Shape) -> Result<(), JsValue> {
+    match shape {
+      Shape::Circle {
+        radius,
+        center,
+        fill_color,
+        outline_width,
+        outline_color,
+      } => {
+        self.context.begin_path();
+        self.context.set_fill_style(&fill_color.into());
+        self.context.set_stroke_style(&outline_color.into());
+        self
+          .context
+          .set_line_width(outline_width * self.camera.zoom);
+        let (x, y) = self.camera.offset(center.x, center.y);
+        self
+          .context
+          .arc(x, y, radius * self.camera.zoom, 0.0, 2.0 * PI)?;
+        self.context.stroke();
+        self.context.fill();
+      }
+    }
     Ok(())
   }
 
@@ -651,17 +676,6 @@ impl Canvas {
       self.context.fill_text(&text, text_pos.0, text_pos.1)?;
     }
 
-    Ok(())
-  }
-
-  fn circle(&self, x: f64, y: f64, radius: f64) -> Result<(), &'static str> {
-    self.context.begin_path();
-    self.move_to(x + radius, y);
-    self
-      .arc(x, y, radius, 0.0, PI * 2.0)
-      .map_err(|_| "Failed to draw a circle.")?;
-    self.context.stroke();
-    self.context.fill();
     Ok(())
   }
 

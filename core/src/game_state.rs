@@ -274,6 +274,7 @@ impl GameState {
 pub struct Map {
   width: f64,
   height: f64,
+  pub static_geometry: Vec<Shape>,
 }
 
 impl Map {
@@ -281,6 +282,16 @@ impl Map {
     Map {
       width: 1024.0,
       height: 768.0,
+      static_geometry: vec![
+        // conference table
+        Shape::Circle {
+          radius: 75.0,
+          center: Position { x: 275.0, y: 275.0 },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#358".into(),
+        },
+      ],
     }
   }
   pub fn width(&self) -> f64 {
@@ -289,6 +300,17 @@ impl Map {
   pub fn height(&self) -> f64 {
     self.height
   }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Shape {
+  Circle {
+    radius: f64,
+    center: Position,
+    fill_color: String,
+    outline_width: f64,
+    outline_color: String,
+  },
 }
 
 // We don't use a real UUID impl because getting randomness in the browser

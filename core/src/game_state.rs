@@ -15,9 +15,12 @@ pub struct Settings {
   pub kill_distance: f64,
   pub task_distance: f64,
   pub report_distance: f64,
+  pub crew_vision: f64,
+  pub impostor_vision: f64,
   pub voting_time: Duration,
   pub num_tasks: usize,
 }
+
 impl Default for Settings {
   fn default() -> Self {
     Settings {
@@ -25,6 +28,8 @@ impl Default for Settings {
       kill_distance: 64.0,
       task_distance: 32.0,
       report_distance: 96.0,
+      crew_vision: 176.0,
+      impostor_vision: 256.0,
       voting_time: Duration::from_secs(120),
       num_tasks: 6,
     }
@@ -798,6 +803,19 @@ impl Player {
 
   pub fn radius() -> f64 {
     10.0
+  }
+
+  pub fn vision(&self, settings: &Settings) -> f64 {
+    if self.impostor {
+      settings.impostor_vision
+    } else {
+      settings.crew_vision
+    }
+  }
+
+  pub fn can_see(&self, settings: &Settings, other: &Position) -> bool {
+    let distance = self.position.distance(other);
+    distance <= self.vision(settings)
   }
 }
 

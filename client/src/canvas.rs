@@ -308,7 +308,8 @@ impl Canvas {
     self.context.rect(0.0, 0.0, self.width, self.height);
     self.context.set_fill_style(&JsValue::from_str("#f3f3f3"));
     self.context.fill();
-    self.camera = match game.local_player() {
+    let local_player = game.local_player();
+    self.camera = match local_player {
       None => {
         // the spectator sees all
         Camera::get_global_camera((self.width, self.height))
@@ -367,6 +368,13 @@ impl Canvas {
       Some(p) => p.dead || p.impostor,
     };
 
+    let can_see = |other: &Position| match local_player {
+      Some(p) => p.can_see(&game.state.settings, other),
+      None => {
+        return true;
+      }
+    };
+
     // Draw tasks, then bodies, then players on top, so tasks are behind everything, then
     // bodies, then imps. That way imps can stand on top of bodies.
     // However maybe we should instead draw items from highest to lowest, vertically?
@@ -379,12 +387,34 @@ impl Canvas {
       }
     }
     for body in game.state.bodies.iter() {
-      self.draw_body(*body)?;
+      if can_see(&body.position) {
+        self.draw_body(*body)?;
+      }
     }
     for (_, player) in game.state.players.iter() {
-      if show_dead_people || !player.dead {
+      if (show_dead_people || !player.dead) && can_see(&player.position) {
         self.draw_player(player)?
       }
+    }
+
+    // finally, draw a semitransparant overlay
+    if let Some(player) = local_player {
+      self.context.set_fill_style(&"#0008".into());
+      self.context.begin_path();
+      let (x, y) = self.camera.offset(player.position.x, player.position.y);
+      // By drawing counterclockwise, we can actually draw over everything in
+      // frame _except_ a center circle:
+      // https://stackoverflow.com/questions/6271419/how-to-fill-the-opposite-shape-on-canvas
+      self.context.arc(
+        x,
+        y,
+        (player.vision(&game.state.settings) * self.camera.zoom)
+          - (Player::radius() * self.camera.zoom / 2.0),
+        0.0,
+        2.0 * PI,
+      )?;
+      self.context.rect(self.width, 0.0, -self.width, self.height);
+      self.context.fill();
     }
 
     Ok(())

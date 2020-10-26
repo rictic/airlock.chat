@@ -88,12 +88,23 @@ impl Camera {
     }
   }
 
-  fn roughly_track_object(&mut self, (width, height): (f64, f64), tracked: Position) {
+  fn roughly_track_object(
+    self,
+    (width, height): (f64, f64),
+    map: &Map,
+    tracked: Position,
+  ) -> Camera {
     // This is what this article calls the 'camera-window' system
     // https://www.gamasutra.com/blogs/ItayKeren/20150511/243083/Scroll_Back_The_Theory_and_Practice_of_Cameras_in_SideScrollers.php
 
-    // This zoom shouldn't be constant
-    self.zoom = 2.0;
+    let mut result = Camera {
+      // This zoom shouldn't be constant
+      zoom: 2.0,
+      left: self.left,
+      right: self.right,
+      top: self.top,
+      bottom: self.bottom,
+    };
 
     // Imagine a smallish rectangle in the center of the screen.
     // If the tracked object stays within that rectangle, the camera stays
@@ -107,7 +118,7 @@ impl Camera {
       let bounding_top = y_center - (height * 0.075);
       let bounding_bottom = y_center + (height * 0.075);
 
-      let (x, y) = self.offset(tracked.x, tracked.y);
+      let (x, y) = result.offset(tracked.x, tracked.y);
       let mut dx = 0.0;
 
       if x < bounding_left {
@@ -124,18 +135,48 @@ impl Camera {
       (dx / self.zoom, dy / self.zoom)
     };
 
-    // The player has teleported? Center the camera on them.
-    if dx > 30.0 || dy > 30.0 {
-      *self = Camera::centered_on_point((width, height), tracked);
-      return;
-    }
     if dx != 0.0 {
-      self.left = self.left + dx;
-      self.right = self.right + dx;
+      result.left += dx;
+      result.right += dx;
     }
     if dy != 0.0 {
-      self.top = self.top + dy;
-      self.bottom = self.bottom + dy;
+      result.top += dy;
+      result.bottom += dy;
+    }
+
+    let oob_limit = 20.0;
+    result.snap_to_edge(map, oob_limit);
+
+    // The camera jerked abruptly? Maybe the player teleported. To help anchor them, try to center
+    // the player in the camera.
+    if (result.left - self.left).abs() > 30.0 || (result.top - self.top).abs() > 30.0 {
+      let mut centered = Camera::centered_on_point((width, height), tracked);
+      centered.snap_to_edge(map, oob_limit);
+      return centered;
+    }
+    result
+  }
+
+  fn snap_to_edge(&mut self, map: &Map, oob_limit: f64) {
+    // See edge-snapping from
+    // https://www.gamasutra.com/blogs/ItayKeren/20150511/243083/Scroll_Back_The_Theory_and_Practice_of_Cameras_in_SideScrollers.php
+    if self.left < -oob_limit {
+      let correction = -self.left - oob_limit;
+      self.left += correction;
+      self.right += correction;
+    } else if self.right > (map.width() + oob_limit) {
+      let correction = self.right - (map.width() + oob_limit);
+      self.left -= correction;
+      self.right -= correction;
+    }
+    if self.top < -oob_limit {
+      let correction = -self.top - oob_limit;
+      self.top += correction;
+      self.bottom += correction;
+    } else if self.bottom > (map.height() + oob_limit) {
+      let correction = self.bottom - (map.height() + oob_limit);
+      self.top -= correction;
+      self.bottom -= correction;
     }
   }
 }
@@ -267,18 +308,18 @@ impl Canvas {
     self.context.rect(0.0, 0.0, self.width, self.height);
     self.context.set_fill_style(&JsValue::from_str("#f3f3f3"));
     self.context.fill();
-    match game.local_player() {
+    self.camera = match game.local_player() {
       None => {
         // the spectator sees all
-        self.camera = Camera::get_global_camera((self.width, self.height))
+        Camera::get_global_camera((self.width, self.height))
       }
       Some(p) => {
         // Center the camera on the player
         self
           .camera
-          .roughly_track_object((self.width, self.height), p.position);
+          .roughly_track_object((self.width, self.height), &game.state.map, p.position)
       }
-    }
+    };
 
     {
       let zero = self.camera.offset(0.0, 0.0);

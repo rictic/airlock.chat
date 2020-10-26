@@ -3,7 +3,7 @@ import initWasm, * as wasm from './wasm/client.js';
 async function getName() {
   const input = document.createElement('input');
   const label = document.createElement('label');
-  label.textContent = 'Name: ';
+  label.textContent = 'Nickname: ';
   label.appendChild(input);
   document.body.appendChild(label);
   const name = await new Promise((resolve) => {

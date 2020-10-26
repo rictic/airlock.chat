@@ -76,7 +76,7 @@ impl GameState {
           console_log!("Day is done, now it's night!");
           self.check_for_victories();
           self.bodies.clear();
-          self.place_players_around_table();
+          self.map.place_players_at_night_start(&mut self.players);
           // Now it's night!
           self.status = GameStatus::Playing(PlayState::Night);
         }
@@ -87,18 +87,6 @@ impl GameState {
     }
 
     self.status.finished()
-  }
-
-  pub fn place_players_around_table(&mut self) {
-    let num_players = self.players.len() as f64;
-    for (i, (_, p)) in self.players.iter_mut().enumerate() {
-      let offset = ((i as f64) / num_players) * 2.0 * std::f64::consts::PI;
-      p.position = Position {
-        x: 275.0 + (100.0 * offset.sin()),
-        y: 275.0 + (100.0 * offset.cos()),
-      };
-      p.velocity = Velocity::default();
-    }
   }
 
   fn is_day_over(&self, day_state: &DayState) -> bool {
@@ -192,7 +180,7 @@ impl GameState {
       }
     }
     self.status = GameStatus::Playing(PlayState::Night);
-    self.place_players_around_table();
+    self.map.place_players_at_game_start(&mut self.players);
     Ok(())
   }
 
@@ -293,19 +281,24 @@ impl GameState {
 pub struct Map {
   width: f64,
   height: f64,
+  start_circle: (Position, f64),
+  meeting_circle: (Position, f64),
   pub static_geometry: Vec<Shape>,
 }
 
 impl Map {
   fn first_map() -> Map {
+    let conference_table = Position { x: 275.0, y: 275.0 };
     Map {
       width: 1024.0,
       height: 768.0,
+      start_circle: (conference_table, 100.0),
+      meeting_circle: (conference_table, 100.0),
       static_geometry: vec![
         // conference table
         Shape::Circle {
           radius: 75.0,
-          center: Position { x: 275.0, y: 275.0 },
+          center: conference_table,
           outline_width: 1.0,
           outline_color: "#000".into(),
           fill_color: "#358".into(),
@@ -321,12 +314,15 @@ impl Map {
       ],
     }
   }
+
   pub fn width(&self) -> f64 {
     self.width
   }
+
   pub fn height(&self) -> f64 {
     self.height
   }
+
   pub fn constrain_circle_within_bounds(&self, center: Position, radius: f64) -> Position {
     Position {
       x: center.x.min(self.width - radius).max(0.0 + radius),
@@ -336,6 +332,7 @@ impl Map {
         .max(0.0 + Player::radius()),
     }
   }
+
   pub fn gen_tasks<T: FromIterator<Task>>(&self, settings: &Settings) -> T {
     // In the future, maps may want to have more of an opinion about the
     // kinds of tasks generated.
@@ -359,6 +356,39 @@ impl Map {
         };
       })
       .collect()
+  }
+
+  pub fn get_spawn_in_position(&self) -> Position {
+    let starting_position_seed: f64 = rand::random();
+    let (circle, radius) = self.start_circle;
+    Position {
+      x: circle.x + (radius * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
+      y: circle.y + (radius * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
+    }
+  }
+
+  pub fn place_players_at_game_start(&self, players: &mut BTreeMap<UUID, Player>) {
+    self.place_players_around_circle(players, self.start_circle);
+  }
+
+  pub fn place_players_at_night_start(&self, players: &mut BTreeMap<UUID, Player>) {
+    self.place_players_around_circle(players, self.meeting_circle);
+  }
+
+  fn place_players_around_circle(
+    &self,
+    players: &mut BTreeMap<UUID, Player>,
+    (center, radius): (Position, f64),
+  ) {
+    let num_players = players.len() as f64;
+    for (i, (_, p)) in players.iter_mut().enumerate() {
+      let offset = ((i as f64) / num_players) * 2.0 * std::f64::consts::PI;
+      p.position = Position {
+        x: center.x + (radius * offset.sin()),
+        y: center.y + (radius * offset.cos()),
+      };
+      p.velocity = Velocity::default();
+    }
   }
 }
 
@@ -639,14 +669,6 @@ impl Vector2d for Position {
 }
 
 impl Position {
-  pub fn random(map: &Map) -> Position {
-    let mut rng = rand::thread_rng();
-    Position {
-      x: rng.gen_range(30.0, map.width - 30.0),
-      y: rng.gen_range(30.0, map.height - 30.0),
-    }
-  }
-
   pub fn sub(self, other: Position) -> impl Vector2d {
     Position {
       x: self.x - other.x,
@@ -742,14 +764,7 @@ pub struct Task {
   pub position: Position,
   pub finished: bool,
 }
-impl Task {
-  pub fn random_positioned_in_map(map: &Map) -> Self {
-    Self {
-      finished: false,
-      position: Position::random(map),
-    }
-  }
-}
+impl Task {}
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Player {
@@ -772,7 +787,6 @@ impl Player {
       dead: false,
       position,
       impostor: false,
-      // 6 random tasks
       tasks: vec![],
       velocity: Velocity::default(),
     }

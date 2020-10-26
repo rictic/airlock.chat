@@ -306,15 +306,7 @@ impl GameServer {
             }
             if add_player {
               let position = match prerecorded_decision {
-                LiveGame => {
-                  let starting_position_seed: f64 = rand::random();
-                  Position {
-                    x: 275.0
-                      + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).sin()),
-                    y: 275.0
-                      + (100.0 * (starting_position_seed * 2.0 * std::f64::consts::PI).cos()),
-                  }
-                }
+                LiveGame => self.state.map.get_spawn_in_position(),
                 Playback(Some(ServerDecision::NewPlayerPosition(pos))) => *pos,
                 _ => {
                   return Err(

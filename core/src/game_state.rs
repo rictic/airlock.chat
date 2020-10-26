@@ -97,7 +97,7 @@ impl GameState {
         x: 275.0 + (100.0 * offset.sin()),
         y: 275.0 + (100.0 * offset.cos()),
       };
-      p.speed = Speed::default();
+      p.velocity = Velocity::default();
     }
   }
 
@@ -124,13 +124,13 @@ impl GameState {
       (elapsed.as_nanos() as f64) / (Duration::from_millis(16).as_nanos() as f64);
 
     for (_, player) in self.players.iter_mut() {
-      if player.speed.dx == 0.0 && player.speed.dy == 0.0 {
+      if player.velocity.dx == 0.0 && player.velocity.dy == 0.0 {
         continue;
       }
 
-      let mut movement_vector = Speed {
-        dx: player.speed.dx * time_steps_passed,
-        dy: player.speed.dy * time_steps_passed,
+      let mut movement_vector = Velocity {
+        dx: player.velocity.dx * time_steps_passed,
+        dy: player.velocity.dy * time_steps_passed,
       };
 
       for shape in self.map.static_geometry.iter() {
@@ -374,7 +374,7 @@ pub enum Shape {
 }
 
 impl Shape {
-  pub fn collide(&self, position: Position, radius: f64, movement_vector: Speed) -> Speed {
+  pub fn collide(&self, position: Position, radius: f64, movement_vector: Velocity) -> Velocity {
     match self {
       Shape::Circle {
         radius: self_radius,
@@ -393,7 +393,7 @@ impl Shape {
           return movement_vector;
         }
 
-        let n: Speed = movement_vector.normalize();
+        let n: Velocity = movement_vector.normalize();
 
         // Determine if A is moving towards B. If not, they're not colliding
         let c = self_center.sub(position);
@@ -415,14 +415,21 @@ impl Shape {
           return movement_vector;
         }
 
-        let distance = d - t.sqrt();
+        let t_sqrt = t.sqrt();
+        let distance = d - t_sqrt;
         let movement_magnitude = movement_vector.magnitude();
 
         if movement_magnitude < distance {
           return movement_vector;
         }
 
-        n.times(distance)
+        let new_speed = n.times(distance);
+
+        // still have t.sqrt energy that we're putting into this motion. need
+        // to figure out the angle between
+        let new_position = position.move_by(new_speed);
+
+        new_speed
       }
     }
   }
@@ -554,6 +561,10 @@ pub trait Vector2d {
   fn times<Ret: Vector2d>(&self, scalar: f64) -> Ret {
     Ret::make_from_point(self.x() * scalar, self.y() * scalar)
   }
+
+  fn add<Ret: Vector2d>(&self, summand: &impl Vector2d) -> Ret {
+    Ret::make_from_point(self.x() + summand.x(), self.y() + summand.y())
+  }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -590,6 +601,13 @@ impl Position {
       y: self.y - other.y,
     }
   }
+
+  pub fn move_by(self, velocity: Velocity) -> Position {
+    Position {
+      x: self.x + velocity.dx,
+      y: self.y + velocity.dy,
+    }
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
@@ -598,12 +616,12 @@ pub struct StartInfo {
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct Speed {
+pub struct Velocity {
   pub dx: f64,
   pub dy: f64,
 }
 
-impl Vector2d for Speed {
+impl Vector2d for Velocity {
   fn x(&self) -> f64 {
     self.dx
   }
@@ -690,7 +708,7 @@ pub struct Player {
   pub dead: bool,
   pub impostor: bool,
   pub tasks: Vec<Task>,
-  pub speed: Speed,
+  pub velocity: Velocity,
 }
 
 impl Player {
@@ -704,7 +722,7 @@ impl Player {
       impostor: false,
       // 6 random tasks
       tasks: vec![],
-      speed: Speed::default(),
+      velocity: Velocity::default(),
     }
   }
 

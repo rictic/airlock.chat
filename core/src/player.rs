@@ -147,8 +147,8 @@ impl GameAsPlayer {
     {
       let new_speed = self.get_speed();
       let player = self.local_player_mut().unwrap();
-      speed_changed = new_speed != player.speed;
-      player.speed = new_speed;
+      speed_changed = new_speed != player.velocity;
+      player.velocity = new_speed;
     }
 
     // This way we don't send a MoveMessage unless movement keys actually changed,
@@ -156,7 +156,7 @@ impl GameAsPlayer {
     if speed_changed {
       let player = self.local_player().unwrap();
       self.socket.send(&ClientToServerMessage::Move(MoveMessage {
-        speed: player.speed,
+        speed: player.velocity,
         position: player.position,
       }))?;
     }
@@ -291,7 +291,7 @@ impl GameAsPlayer {
     Ok(Some(voting_state))
   }
 
-  fn get_speed(&self) -> Speed {
+  fn get_speed(&self) -> Velocity {
     let mut dx = 0.0;
     let mut dy = 0.0;
     if self.inputs.up && !self.inputs.down {
@@ -304,7 +304,7 @@ impl GameAsPlayer {
     } else if self.inputs.right {
       dx = self.state.settings.speed
     }
-    Speed { dx, dy }
+    Velocity { dx, dy }
   }
 
   fn kill_player_near(&mut self, position: Position) -> Result<(), String> {
@@ -427,7 +427,7 @@ impl GameAsPlayer {
                 impostor,
                 tasks,
                 position,
-                speed,
+                velocity: speed,
               } = player;
               local_player.name = name;
               local_player.color = color;
@@ -436,7 +436,7 @@ impl GameAsPlayer {
               local_player.tasks = tasks;
               // Always trust our local speed over the server
               if player.uuid != self.my_uuid {
-                local_player.speed = speed;
+                local_player.velocity = speed;
               }
               // Avoid jitter by ignoring position updates (and instead use local reconning
               // based on speeds) unless the distance is greater than some small amount.

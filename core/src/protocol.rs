@@ -71,7 +71,7 @@ pub fn get_version_sha() -> &'static str {
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct MoveMessage {
-  pub speed: Speed,
+  pub speed: Velocity,
   pub position: Position,
 }
 

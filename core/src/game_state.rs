@@ -4,10 +4,10 @@ use rand::Rng;
 use serde::de::{self, Visitor};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::{collections::BTreeMap, iter::FromIterator};
+use std::{f64::consts::PI, fmt};
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct Settings {
@@ -97,7 +97,7 @@ impl GameState {
         x: 275.0 + (100.0 * offset.sin()),
         y: 275.0 + (100.0 * offset.cos()),
       };
-      p.speed = Speed::default();
+      p.velocity = Velocity::default();
     }
   }
 
@@ -124,17 +124,17 @@ impl GameState {
       (elapsed.as_nanos() as f64) / (Duration::from_millis(16).as_nanos() as f64);
 
     for (_, player) in self.players.iter_mut() {
-      if player.speed.dx == 0.0 && player.speed.dy == 0.0 {
+      if player.velocity.dx == 0.0 && player.velocity.dy == 0.0 {
         continue;
       }
 
-      let mut movement_vector = Speed {
-        dx: player.speed.dx * time_steps_passed,
-        dy: player.speed.dy * time_steps_passed,
+      let mut movement_vector = Velocity {
+        dx: player.velocity.dx * time_steps_passed,
+        dy: player.velocity.dy * time_steps_passed,
       };
 
       for shape in self.map.static_geometry.iter() {
-        movement_vector = shape.collide(player.position, Player::radius(), movement_vector);
+        movement_vector = shape.collide(player.position, Player::radius(), movement_vector, 0.10);
       }
 
       // Advance the player
@@ -374,7 +374,13 @@ pub enum Shape {
 }
 
 impl Shape {
-  pub fn collide(&self, position: Position, radius: f64, movement_vector: Speed) -> Speed {
+  pub fn collide(
+    &self,
+    center: Position,
+    radius: f64,
+    movement_vector: Velocity,
+    friction: f64,
+  ) -> Velocity {
     match self {
       Shape::Circle {
         radius: self_radius,
@@ -387,16 +393,16 @@ impl Shape {
         // Quick check to see whether, given starting locations and the magnitude of the
         // movement these two could collide if the player moved directly at this shape.
         let sum_radii = radius + self_radius;
-        let dist = position.distance(self_center) - sum_radii;
+        let dist = center.distance(self_center) - sum_radii;
         if movement_vector.magnitude() < dist {
           // Too far away, early exit.
           return movement_vector;
         }
 
-        let n: Speed = movement_vector.normalize();
+        let n: Velocity = movement_vector.normalize();
 
         // Determine if A is moving towards B. If not, they're not colliding
-        let c = self_center.sub(position);
+        let c = self_center.sub(center);
         let d = n.dot_product(&c);
         if d <= 0.0 {
           return movement_vector;
@@ -415,14 +421,42 @@ impl Shape {
           return movement_vector;
         }
 
-        let distance = d - t.sqrt();
+        let t_sqrt = t.sqrt();
+        let distance = d - t_sqrt;
         let movement_magnitude = movement_vector.magnitude();
 
         if movement_magnitude < distance {
           return movement_vector;
         }
 
-        n.times(distance)
+        let new_velocity = n.times(distance);
+
+        let new_position = center.move_by(new_velocity);
+        let vector_between_centers: Velocity = self_center.minus(&new_position);
+        let angle = n.angle_between(&vector_between_centers);
+        let angle_multiplier = angle * 2.0 / PI;
+
+        let slope_of_tangent_line = -(1.0 / self_center.slope(&new_position));
+        let tangent_point: Position = vector_between_centers
+          .normalize::<Position>()
+          .times(*self_radius);
+        let second_tangent_point = Position {
+          x: tangent_point.x + 1.0,
+          y: tangent_point.y + slope_of_tangent_line,
+        };
+        let tangent_vector: Velocity = tangent_point.sub(second_tangent_point).normalize();
+        let reversed_tangent_vector: Velocity = tangent_vector.times(-1.0);
+        let tangent_vector = if tangent_vector.distance(&n) < reversed_tangent_vector.distance(&n) {
+          tangent_vector
+        } else {
+          reversed_tangent_vector
+        };
+
+        let leftover_magnitude = movement_magnitude - distance;
+        return new_velocity.add(
+          &tangent_vector
+            .times::<Velocity>(leftover_magnitude * angle_multiplier * (1.0 - friction)),
+        );
       }
     }
   }
@@ -528,31 +562,60 @@ impl<'de> Deserialize<'de> for UUID {
 }
 
 pub trait Vector2d {
+  #[must_use]
   fn x(&self) -> f64;
+  #[must_use]
   fn y(&self) -> f64;
+
+  #[must_use]
   fn make_from_point(x: f64, y: f64) -> Self;
 
+  #[must_use]
   fn distance(&self, other: &impl Vector2d) -> f64 {
     ((self.x() - other.x()).powi(2) + (self.y() - other.y()).powi(2))
       .sqrt()
       .abs()
   }
 
+  #[must_use]
   fn magnitude(&self) -> f64 {
     self.distance(&Position { x: 0.0, y: 0.0 })
   }
 
+  #[must_use]
   fn dot_product(&self, other: &impl Vector2d) -> f64 {
     (self.x() * other.x()) + (self.y() * other.y())
   }
 
+  #[must_use]
   fn normalize<Ret: Vector2d>(&self) -> Ret {
     let magnitude = self.magnitude();
     Ret::make_from_point(self.x() / magnitude, self.y() / magnitude)
   }
 
+  #[must_use]
   fn times<Ret: Vector2d>(&self, scalar: f64) -> Ret {
     Ret::make_from_point(self.x() * scalar, self.y() * scalar)
+  }
+
+  #[must_use]
+  fn add<Ret: Vector2d>(&self, summand: &impl Vector2d) -> Ret {
+    Ret::make_from_point(self.x() + summand.x(), self.y() + summand.y())
+  }
+
+  #[must_use]
+  fn minus<Ret: Vector2d>(&self, subtrahend: &impl Vector2d) -> Ret {
+    Ret::make_from_point(self.x() - subtrahend.x(), self.y() - subtrahend.y())
+  }
+
+  #[must_use]
+  fn angle_between(&self, other: &impl Vector2d) -> f64 {
+    (self.dot_product(other) / (self.magnitude() * other.magnitude())).acos()
+  }
+
+  #[must_use]
+  fn slope(&self, other: &impl Vector2d) -> f64 {
+    (other.y() - self.y()) / (other.x() - self.x())
   }
 }
 
@@ -590,6 +653,13 @@ impl Position {
       y: self.y - other.y,
     }
   }
+
+  pub fn move_by(self, velocity: Velocity) -> Position {
+    Position {
+      x: self.x + velocity.dx,
+      y: self.y + velocity.dy,
+    }
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
@@ -598,12 +668,12 @@ pub struct StartInfo {
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct Speed {
+pub struct Velocity {
   pub dx: f64,
   pub dy: f64,
 }
 
-impl Vector2d for Speed {
+impl Vector2d for Velocity {
   fn x(&self) -> f64 {
     self.dx
   }
@@ -690,7 +760,7 @@ pub struct Player {
   pub dead: bool,
   pub impostor: bool,
   pub tasks: Vec<Task>,
-  pub speed: Speed,
+  pub velocity: Velocity,
 }
 
 impl Player {
@@ -704,7 +774,7 @@ impl Player {
       impostor: false,
       // 6 random tasks
       tasks: vec![],
-      speed: Speed::default(),
+      velocity: Velocity::default(),
     }
   }
 

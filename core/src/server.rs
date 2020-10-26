@@ -255,7 +255,7 @@ impl GameServer {
       }
       ClientToServerMessage::Move(moved) => {
         if let Some(player) = self.state.players.get_mut(&sender) {
-          player.speed = moved.speed;
+          player.velocity = moved.speed;
           player.position = moved.position;
         }
         self.broadcast_snapshot()?;

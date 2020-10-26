@@ -4,10 +4,10 @@ use rand::Rng;
 use serde::de::{self, Visitor};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::{collections::BTreeMap, iter::FromIterator};
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct Settings {
@@ -16,15 +16,17 @@ pub struct Settings {
   pub task_distance: f64,
   pub report_distance: f64,
   pub voting_time: Duration,
+  pub num_tasks: usize,
 }
 impl Default for Settings {
   fn default() -> Self {
     Settings {
       speed: 2.0,
-      task_distance: 32.0,
       kill_distance: 64.0,
+      task_distance: 32.0,
       report_distance: 96.0,
       voting_time: Duration::from_secs(120),
+      num_tasks: 6,
     }
   }
 }
@@ -158,7 +160,7 @@ impl GameState {
     let mut assignments: BTreeMap<UUID, PlayerStartInfo> = self
       .players
       .keys()
-      .map(|k| (*k, PlayerStartInfo::new(&self.map)))
+      .map(|k| (*k, PlayerStartInfo::new(&self.map, &self.settings)))
       .collect();
     let impostor_index = rand::thread_rng().gen_range(0, self.players.len());
     for (i, (_uuid, player_start_info)) in assignments.iter_mut().enumerate() {
@@ -334,6 +336,30 @@ impl Map {
         .max(0.0 + Player::radius()),
     }
   }
+  pub fn gen_tasks<T: FromIterator<Task>>(&self, settings: &Settings) -> T {
+    // In the future, maps may want to have more of an opinion about the
+    // kinds of tasks generated.
+    (0..settings.num_tasks)
+      .map(|_| loop {
+        let mut rng = rand::thread_rng();
+        let position = Position {
+          x: rng.gen_range(30.0, self.width - 30.0),
+          y: rng.gen_range(30.0, self.height - 30.0),
+        };
+        if self
+          .static_geometry
+          .iter()
+          .any(|s| s.collides_with(position, 30.0))
+        {
+          continue;
+        }
+        return Task {
+          finished: false,
+          position,
+        };
+      })
+      .collect()
+  }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -397,6 +423,19 @@ impl Shape {
         }
 
         n.times(distance)
+      }
+    }
+  }
+
+  pub fn collides_with(&self, other_position: Position, other_radius: f64) -> bool {
+    match self {
+      Shape::Circle { radius, center, .. } => {
+        let distance = center.distance(&other_position);
+        let collided = distance < (radius + other_radius);
+        if collided {
+          console_log!("{:?} collided with {:?}", center, other_position);
+        }
+        collided
       }
     }
   }

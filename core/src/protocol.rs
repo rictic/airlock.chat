@@ -132,12 +132,10 @@ impl DisplayMessage {
 }
 
 impl PlayerStartInfo {
-  pub fn new(map: &Map) -> Self {
+  pub fn new(map: &Map, settings: &Settings) -> Self {
     Self {
       team: Team::Crew,
-      tasks: (0..6)
-        .map(|_| Task::random_positioned_in_map(map))
-        .collect(),
+      tasks: map.gen_tasks(settings),
     }
   }
 }

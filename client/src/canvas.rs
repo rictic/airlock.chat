@@ -160,20 +160,29 @@ impl Camera {
   fn snap_to_edge(&mut self, map: &Map, oob_limit: f64) {
     // See edge-snapping from
     // https://www.gamasutra.com/blogs/ItayKeren/20150511/243083/Scroll_Back_The_Theory_and_Practice_of_Cameras_in_SideScrollers.php
-    if self.left < -oob_limit {
+    //
+    // Still need to resolve what happens with viewports that are almost the size
+    // of the map, or even larger.
+    // as the player moves around within them, the camera could mostly stay still,
+    // but this causes them to snap to the edge sometimes. Hm.
+    if self.left <= -oob_limit {
+      console_log!("Snapped to left edge");
       let correction = -self.left - oob_limit;
       self.left += correction;
       self.right += correction;
-    } else if self.right > (map.width() + oob_limit) {
+    } else if self.right >= (map.width() + oob_limit) {
+      console_log!("Snapped to right edge");
       let correction = self.right - (map.width() + oob_limit);
       self.left -= correction;
       self.right -= correction;
     }
-    if self.top < -oob_limit {
+    if self.top <= -oob_limit {
+      console_log!("Snapped to top edge");
       let correction = -self.top - oob_limit;
       self.top += correction;
       self.bottom += correction;
-    } else if self.bottom > (map.height() + oob_limit) {
+    } else if self.bottom >= (map.height() + oob_limit) {
+      console_log!("Snapped to bottom edge");
       let correction = self.bottom - (map.height() + oob_limit);
       self.top -= correction;
       self.bottom -= correction;

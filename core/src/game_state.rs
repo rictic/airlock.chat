@@ -297,13 +297,7 @@ impl Map {
     Map {
       width: 3036.0,
       height: 768.0,
-      start_circle: (
-        Position {
-          x: 1900.0,
-          y: 500.0,
-        },
-        100.0,
-      ),
+      start_circle: (conference_table, 100.0),
       meeting_circle: (conference_table, 100.0),
       static_geometry: vec![
         // conference table

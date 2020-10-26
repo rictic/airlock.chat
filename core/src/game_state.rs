@@ -132,8 +132,8 @@ impl GameState {
 
       // Advance the player
       let new_pos = Position {
-        x: player.position.x + movement_vector.dx * time_steps_passed,
-        y: player.position.y + movement_vector.dy * time_steps_passed,
+        x: player.position.x + movement_vector.dx,
+        y: player.position.y + movement_vector.dy,
       };
 
       // Bound their new position within within the map
@@ -295,9 +295,15 @@ impl Map {
   fn first_map() -> Map {
     let conference_table = Position { x: 275.0, y: 275.0 };
     Map {
-      width: 1024.0,
+      width: 3036.0,
       height: 768.0,
-      start_circle: (conference_table, 100.0),
+      start_circle: (
+        Position {
+          x: 1900.0,
+          y: 500.0,
+        },
+        100.0,
+      ),
       meeting_circle: (conference_table, 100.0),
       static_geometry: vec![
         // conference table
@@ -312,6 +318,43 @@ impl Map {
         Shape::Circle {
           radius: 62.0,
           center: Position { x: 875.0, y: 505.0 },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#a22".into(),
+        },
+        Shape::Circle {
+          radius: 62.0,
+          center: Position { x: 1675.0, y: 95.0 },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#a22".into(),
+        },
+        Shape::Circle {
+          radius: 140.0,
+          center: Position {
+            x: 2475.0,
+            y: 190.0,
+          },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#666".into(),
+        },
+        Shape::Circle {
+          radius: 140.0,
+          center: Position {
+            x: 2475.0,
+            y: 190.0 + 140.0 + 140.0 + 30.0,
+          },
+          outline_width: 1.0,
+          outline_color: "#000".into(),
+          fill_color: "#666".into(),
+        },
+        Shape::Circle {
+          radius: 62.0,
+          center: Position {
+            x: 2875.0,
+            y: 115.0,
+          },
           outline_width: 1.0,
           outline_color: "#000".into(),
           fill_color: "#a22".into(),

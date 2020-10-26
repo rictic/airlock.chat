@@ -132,8 +132,8 @@ impl GameState {
 
       // Advance the player
       let new_pos = Position {
-        x: player.position.x + movement_vector.dx * time_steps_passed,
-        y: player.position.y + movement_vector.dy * time_steps_passed,
+        x: player.position.x + movement_vector.dx,
+        y: player.position.y + movement_vector.dy,
       };
 
       // Bound their new position within within the map

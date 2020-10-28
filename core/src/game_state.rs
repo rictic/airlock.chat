@@ -796,6 +796,16 @@ impl Color {
     }
   }
 
+  // When text is written with this color, should it be
+  // outlined in white or black? This method knows!
+  // Determined by just kinda... eyeballing it, you know?
+  pub fn text_outline_color(&self) -> &'static str {
+    match self {
+      Color::Red | Color::Blue | Color::Black | Color::Purple | Color::Gray => "#fff",
+      Color::Orange | Color::Yellow | Color::White | Color::Pink | Color::Green => "#000",
+    }
+  }
+
   pub fn random() -> Color {
     Color::all()[rand::thread_rng().gen_range(0, Color::all().len())]
   }

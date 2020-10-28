@@ -58,6 +58,7 @@ features = [
   'MessageEvent',
   'ProgressEvent',
   'Storage',
+  'TextMetrics',
   'WebSocket',
   'Window',
 ]

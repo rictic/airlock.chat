@@ -65,7 +65,7 @@ impl GameServer {
       self
         .broadcaster
         .broadcast(&&ServerToClientMessage::DisplayMessage(DisplayMessage {
-          message: format!("{:?} win!", team),
+          message: Message::PlainString(format!("{:?} win!", team)),
           duration: Duration::from_secs(15),
           delay_before_show: Duration::from_secs(0),
         }))?;
@@ -78,7 +78,16 @@ impl GameServer {
       self
         .broadcaster
         .broadcast(&&ServerToClientMessage::DisplayMessage(DisplayMessage {
-          message: format!("{} ({:?}) disconnected", player.name, player.color),
+          message: Message::FormattingString(vec![
+            FormattedText {
+              color: Some(player.color),
+              text: player.name.clone(),
+            },
+            FormattedText {
+              color: None,
+              text: " disconnected".to_string(),
+            },
+          ]),
           duration: Duration::from_secs(10),
           delay_before_show: Duration::from_secs(0),
         }))?;
@@ -143,7 +152,7 @@ impl GameServer {
           self.broadcaster.send_to_player(
             uuid,
             &ServerToClientMessage::DisplayMessage(DisplayMessage {
-              message: "The game has begun!".to_string(),
+              message: Message::PlainString("The game has begun!".to_string()),
               duration: Duration::from_secs(10),
               delay_before_show: Duration::from_secs(0),
             }),
@@ -152,9 +161,10 @@ impl GameServer {
             self.broadcaster.send_to_player(
               uuid,
               &ServerToClientMessage::DisplayMessage(DisplayMessage {
-                message:
+                message: Message::PlainString(
                   "You are an evil impostor. Try to find crewmates alone and kill them! (press Q)"
                     .to_string(),
+                ),
                 duration: Duration::from_secs(10),
                 delay_before_show: Duration::from_secs(3),
               }),
@@ -162,7 +172,9 @@ impl GameServer {
             self.broadcaster.send_to_player(
               uuid,
               &ServerToClientMessage::DisplayMessage(DisplayMessage {
-                message: "But don't get caught! The crew can vote you out!".to_string(),
+                message: Message::PlainString(
+                  "But don't get caught! The crew can vote you out!".to_string(),
+                ),
                 duration: Duration::from_secs(10),
                 delay_before_show: Duration::from_secs(6),
               }),
@@ -171,8 +183,9 @@ impl GameServer {
             self.broadcaster.send_to_player(
               uuid,
               &ServerToClientMessage::DisplayMessage(DisplayMessage {
-                message: "You are good crewmate. Find your tasks and complete them (press E)"
-                  .to_string(),
+                message: Message::PlainString(
+                  "You are good crewmate. Find your tasks and complete them (press E)".to_string(),
+                ),
                 duration: Duration::from_secs(10),
                 delay_before_show: Duration::from_secs(3),
               }),
@@ -186,7 +199,7 @@ impl GameServer {
             self.broadcaster.send_to_player(
               uuid,
               &ServerToClientMessage::DisplayMessage(DisplayMessage {
-                message: format!("But beware, there's {} evil impostor{} on board. If you find a dead body, press R to report it", num_impostors, if num_impostors == 1 {""} else {"s"}),
+                message: Message::PlainString(format!("But beware, there's {} evil impostor{} on board. If you find a dead body, press R to report it", num_impostors, if num_impostors == 1 {""} else {"s"})),
                 duration: Duration::from_secs(10),
                 delay_before_show: Duration::from_secs(6),
               }),
@@ -325,7 +338,16 @@ impl GameServer {
               self
                 .broadcaster
                 .broadcast(&ServerToClientMessage::DisplayMessage(DisplayMessage {
-                  message: format!("{} ({:?}) has joined", name, color),
+                  message: Message::FormattingString(vec![
+                    FormattedText {
+                      color: Some(*color),
+                      text: name.clone(),
+                    },
+                    FormattedText {
+                      color: None,
+                      text: " has_joined".into(),
+                    },
+                  ]),
                   duration: Duration::from_secs(10),
                   delay_before_show: Duration::from_secs(0),
                 }))?;
@@ -344,7 +366,7 @@ impl GameServer {
         self.broadcaster.send_to_player(
           &sender,
           &&ServerToClientMessage::DisplayMessage(DisplayMessage {
-            message: "Welcome to airlock.chat!".to_string(),
+            message: Message::PlainString("Welcome to airlock.chat!".to_string()),
             duration: Duration::from_secs(10),
             delay_before_show: Duration::from_secs(0),
           }),

@@ -284,9 +284,7 @@ impl Canvas {
     self.context.set_line_width(4.0);
     self.context.set_text_align("left");
     self.context.set_text_baseline("middle");
-    self.context.set_stroke_style(&JsValue::from("#fff"));
-    self.context.set_fill_style(&JsValue::from("#000"));
-    let mut messages: Vec<String> = game
+    let mut messages: Vec<Message> = game
       .displayed_messages
       .iter()
       .rev()
@@ -294,11 +292,11 @@ impl Canvas {
       .map(|m| m.message.clone())
       .collect();
     if game.state.status == GameStatus::Lobby {
-      messages.push(format!(
+      messages.push(Message::PlainString(format!(
         "In the lobby. {}/10 players",
         game.state.players.len()
-      ));
-      messages.push(format!("Press P to start"));
+      )));
+      messages.push(Message::PlainString(format!("Press P to start")));
     }
     for (i, message) in messages.into_iter().enumerate() {
       self.context.begin_path();
@@ -306,8 +304,39 @@ impl Canvas {
         30.0,
         self.height - (30.0 + (font_height + 5.0) * (i as f64)),
       );
-      self.context.stroke_text(&message, text_pos.0, text_pos.1)?;
-      self.context.fill_text(&message, text_pos.0, text_pos.1)?;
+      match &message {
+        Message::PlainString(s) => {
+          self.context.set_stroke_style(&JsValue::from("#fff"));
+          self.context.set_fill_style(&JsValue::from("#000"));
+          self.context.stroke_text(s, text_pos.0, text_pos.1)?;
+          self.context.fill_text(s, text_pos.0, text_pos.1)?;
+        }
+        Message::FormattingString(parts) => {
+          let mut x = 0.0;
+          for part in parts {
+            self.context.set_fill_style(
+              &part
+                .color
+                .map(|c| c.to_str().into())
+                .unwrap_or_else(|| JsValue::from("#000")),
+            );
+            self.context.set_stroke_style(
+              &part
+                .color
+                .map(|c| c.text_outline_color().into())
+                .unwrap_or_else(|| JsValue::from("#fff")),
+            );
+            let metrics = self.context.measure_text(&part.text)?;
+            self
+              .context
+              .stroke_text(&part.text, text_pos.0 + x, text_pos.1)?;
+            self
+              .context
+              .fill_text(&part.text, text_pos.0 + x, text_pos.1)?;
+            x += metrics.width();
+          }
+        }
+      }
     }
     Ok(())
   }

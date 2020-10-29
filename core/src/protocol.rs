@@ -105,10 +105,23 @@ pub struct PlayerStartInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct DisplayMessage {
-  pub message: String,
+  pub message: Message,
   pub duration: Duration,
   pub delay_before_show: Duration,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum Message {
+  PlainString(String),
+  FormattingString(Vec<FormattedText>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct FormattedText {
+  pub text: String,
+  pub color: Option<Color>,
+}
+
 impl DisplayMessage {
   pub fn pass_time(&mut self, elapsed: Duration) {
     if self.delay_before_show != Duration::from_secs(0) {

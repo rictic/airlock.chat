@@ -74,6 +74,7 @@ impl GameServer {
   }
 
   pub fn disconnected(&mut self, disconnected_player: UUID) -> Result<(), Box<dyn Error>> {
+    self.record_event(&RecordingEvent::Disconnect(disconnected_player));
     if let Some(player) = self.state.players.get(&disconnected_player) {
       self
         .broadcaster

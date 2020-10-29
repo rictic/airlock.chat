@@ -1,3 +1,5 @@
+#![warn(rust_2018_idioms)]
+
 mod canvas;
 mod js_api;
 mod network;

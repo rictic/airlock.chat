@@ -28,6 +28,7 @@ pub struct RecordingEntry {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum RecordingEvent {
   Message(PlaybackMessage),
+  Disconnect(UUID),
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackMessage {
@@ -176,10 +177,14 @@ impl PlaybackServer {
       self.current_index += 1;
       // Ensure that we handle other kinds of events later.
       #[allow(clippy::infallible_destructuring_match)]
-      let message = match &entry.event {
-        RecordingEvent::Message(message) => message,
+      match &entry.event {
+        RecordingEvent::Message(message) => {
+          self.game_server.handle_message_playback(message)?;
+        }
+        RecordingEvent::Disconnect(uuid) => {
+          self.game_server.disconnected(*uuid)?;
+        }
       };
-      self.game_server.handle_message_playback(message)?;
       server_messages += 1;
     }
     if self.game_server.state.status.finished() && server_messages == 0 {

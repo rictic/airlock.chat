@@ -1,3 +1,5 @@
+#![warn(rust_2018_idioms)]
+
 mod server;
 
 use crate::server::{client_connected, WebsocketServer};

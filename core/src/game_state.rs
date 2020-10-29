@@ -126,8 +126,11 @@ impl GameState {
         dy: player.velocity.dy * time_steps_passed,
       };
 
-      for shape in self.map.static_geometry.iter() {
-        movement_vector = shape.collide(player.position, Player::radius(), movement_vector, 0.10);
+      // Unless you're a ghost, you gotta worry about colliding with the furniture.
+      if !player.dead {
+        for shape in self.map.static_geometry.iter() {
+          movement_vector = shape.collide(player.position, Player::radius(), movement_vector, 0.10);
+        }
       }
 
       // Advance the player
@@ -868,7 +871,7 @@ impl Player {
   pub fn can_see(&self, settings: &Settings, other: &Position) -> bool {
     let vision = match self.vision(&settings) {
       None => return true,
-      Some(v) => v
+      Some(v) => v,
     };
     let distance = self.position.distance(other);
     distance <= vision

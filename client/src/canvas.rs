@@ -468,8 +468,10 @@ impl Canvas {
         outline_color,
       } => {
         self.context.begin_path();
-        self.context.set_fill_style(&fill_color.into());
-        self.context.set_stroke_style(&outline_color.into());
+        self.context.set_fill_style(&JsValue::from(*fill_color));
+        self
+          .context
+          .set_stroke_style(&JsValue::from(*outline_color));
         self
           .context
           .set_line_width(outline_width * self.camera.zoom);

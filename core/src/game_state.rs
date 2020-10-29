@@ -288,72 +288,74 @@ pub struct Map {
   height: f64,
   start_circle: (Position, f64),
   meeting_circle: (Position, f64),
-  pub static_geometry: Vec<Shape>,
+  pub static_geometry: &'static [Shape],
 }
+
+const FIRST_CONFERENCE_TABLE: Position = Position { x: 275.0, y: 275.0 };
+const FIRST_MAP_GEOMETRY: &[Shape] = &[
+  // conference table
+  Shape::Circle {
+    radius: 75.0,
+    center: FIRST_CONFERENCE_TABLE,
+    outline_width: 1.0,
+    outline_color: "#000",
+    fill_color: "#358",
+  },
+  // nega table
+  Shape::Circle {
+    radius: 62.0,
+    center: Position { x: 875.0, y: 505.0 },
+    outline_width: 1.0,
+    outline_color: "#000",
+    fill_color: "#a22",
+  },
+  Shape::Circle {
+    radius: 62.0,
+    center: Position { x: 1675.0, y: 95.0 },
+    outline_width: 1.0,
+    outline_color: "#000",
+    fill_color: "#a22",
+  },
+  Shape::Circle {
+    radius: 140.0,
+    center: Position {
+      x: 2475.0,
+      y: 190.0,
+    },
+    outline_width: 1.0,
+    outline_color: "#000",
+    fill_color: "#666",
+  },
+  Shape::Circle {
+    radius: 140.0,
+    center: Position {
+      x: 2475.0,
+      y: 190.0 + 140.0 + 140.0 + 30.0,
+    },
+    outline_width: 1.0,
+    outline_color: "#000",
+    fill_color: "#666",
+  },
+  Shape::Circle {
+    radius: 62.0,
+    center: Position {
+      x: 2875.0,
+      y: 115.0,
+    },
+    outline_width: 1.0,
+    outline_color: "#000",
+    fill_color: "#a22",
+  },
+];
 
 impl Map {
   fn first_map() -> Map {
-    let conference_table = Position { x: 275.0, y: 275.0 };
     Map {
       width: 3036.0,
       height: 768.0,
-      start_circle: (conference_table, 100.0),
-      meeting_circle: (conference_table, 100.0),
-      static_geometry: vec![
-        // conference table
-        Shape::Circle {
-          radius: 75.0,
-          center: conference_table,
-          outline_width: 1.0,
-          outline_color: "#000".into(),
-          fill_color: "#358".into(),
-        },
-        // nega table
-        Shape::Circle {
-          radius: 62.0,
-          center: Position { x: 875.0, y: 505.0 },
-          outline_width: 1.0,
-          outline_color: "#000".into(),
-          fill_color: "#a22".into(),
-        },
-        Shape::Circle {
-          radius: 62.0,
-          center: Position { x: 1675.0, y: 95.0 },
-          outline_width: 1.0,
-          outline_color: "#000".into(),
-          fill_color: "#a22".into(),
-        },
-        Shape::Circle {
-          radius: 140.0,
-          center: Position {
-            x: 2475.0,
-            y: 190.0,
-          },
-          outline_width: 1.0,
-          outline_color: "#000".into(),
-          fill_color: "#666".into(),
-        },
-        Shape::Circle {
-          radius: 140.0,
-          center: Position {
-            x: 2475.0,
-            y: 190.0 + 140.0 + 140.0 + 30.0,
-          },
-          outline_width: 1.0,
-          outline_color: "#000".into(),
-          fill_color: "#666".into(),
-        },
-        Shape::Circle {
-          radius: 62.0,
-          center: Position {
-            x: 2875.0,
-            y: 115.0,
-          },
-          outline_width: 1.0,
-          outline_color: "#000".into(),
-          fill_color: "#a22".into(),
-        },
-      ],
+      start_circle: (FIRST_CONFERENCE_TABLE, 100.0),
+      meeting_circle: (FIRST_CONFERENCE_TABLE, 100.0),
+      static_geometry: FIRST_MAP_GEOMETRY,
     }
   }
 
@@ -439,9 +441,9 @@ pub enum Shape {
   Circle {
     radius: f64,
     center: Position,
-    fill_color: String,
+    fill_color: &'static str,
     outline_width: f64,
-    outline_color: String,
+    outline_color: &'static str,
   },
 }
 
@@ -593,7 +595,7 @@ impl Serialize for UUID {
 struct UUIDVisitor;
 impl<'de> Visitor<'de> for UUIDVisitor {
   type Value = UUID;
-  fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+  fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
     formatter.write_str("a 32 character long hex string")
   }
 

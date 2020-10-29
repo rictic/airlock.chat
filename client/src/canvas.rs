@@ -436,21 +436,24 @@ impl Canvas {
     }
 
     // Draw a semitransparant overlay for fog of war.
-    if let Some(player) = local_player {
-      let vision = game.vision() * self.camera.zoom;
-      let (x, y) = self.camera.offset(player.position.x, player.position.y);
-      let fringe = Player::radius() * 2.5 * self.camera.zoom;
-      let gradient = self
-        .context
-        .create_radial_gradient(x, y, vision, x, y, vision - fringe)?;
-      gradient.add_color_stop(0.0, "#000c")?;
-      gradient.add_color_stop(0.4, "#0009")?;
-      gradient.add_color_stop(1.0, "#0000")?;
+    let vision = game.vision();
+    if let Some(vision) = vision {
+      if let Some(player) = local_player {
+        let vision = vision * self.camera.zoom;
+        let (x, y) = self.camera.offset(player.position.x, player.position.y);
+        let fringe = Player::radius() * 2.5 * self.camera.zoom;
+        let gradient = self
+          .context
+          .create_radial_gradient(x, y, vision, x, y, vision - fringe)?;
+        gradient.add_color_stop(0.0, "#000c")?;
+        gradient.add_color_stop(0.4, "#0009")?;
+        gradient.add_color_stop(1.0, "#0000")?;
 
-      self.context.begin_path();
-      self.context.set_fill_style(&gradient);
-      self.context.rect(0.0, 0.0, self.width, self.height);
-      self.context.fill();
+        self.context.begin_path();
+        self.context.set_fill_style(&gradient);
+        self.context.rect(0.0, 0.0, self.width, self.height);
+        self.context.fill();
+      }
     }
 
     Ok(())

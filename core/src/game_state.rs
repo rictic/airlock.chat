@@ -854,17 +854,24 @@ impl Player {
     10.0
   }
 
-  pub fn vision(&self, settings: &Settings) -> f64 {
+  pub fn vision(&self, settings: &Settings) -> Option<f64> {
+    if self.dead {
+      return None;
+    }
     if self.impostor {
-      settings.impostor_vision
+      Some(settings.impostor_vision)
     } else {
-      settings.crew_vision
+      Some(settings.crew_vision)
     }
   }
 
   pub fn can_see(&self, settings: &Settings, other: &Position) -> bool {
+    let vision = match self.vision(&settings) {
+      None => return true,
+      Some(v) => v
+    };
     let distance = self.position.distance(other);
-    distance <= self.vision(settings)
+    distance <= vision
   }
 }
 

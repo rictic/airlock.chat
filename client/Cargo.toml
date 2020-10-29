@@ -48,6 +48,7 @@ version = "0.3.4"
 features = [
   'BinaryType',
   'Blob',
+  'CanvasGradient',
   'CanvasRenderingContext2d',
   'Document',
   'Element',

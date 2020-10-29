@@ -435,23 +435,21 @@ impl Canvas {
       }
     }
 
-    // finally, draw a semitransparant overlay
+    // Draw a semitransparant overlay for fog of war.
     if let Some(player) = local_player {
-      self.context.set_fill_style(&"#0008".into());
-      self.context.begin_path();
+      let vision = game.vision() * self.camera.zoom;
       let (x, y) = self.camera.offset(player.position.x, player.position.y);
-      // By drawing counterclockwise, we can actually draw over everything in
-      // frame _except_ a center circle:
-      // https://stackoverflow.com/questions/6271419/how-to-fill-the-opposite-shape-on-canvas
-      self.context.arc(
-        x,
-        y,
-        (player.vision(&game.state.settings) * self.camera.zoom)
-          - (Player::radius() * self.camera.zoom / 2.0),
-        0.0,
-        2.0 * PI,
-      )?;
-      self.context.rect(self.width, 0.0, -self.width, self.height);
+      let fringe = Player::radius() * 2.5 * self.camera.zoom;
+      let gradient = self
+        .context
+        .create_radial_gradient(x, y, vision, x, y, vision - fringe)?;
+      gradient.add_color_stop(0.0, "#000c")?;
+      gradient.add_color_stop(0.4, "#0009")?;
+      gradient.add_color_stop(1.0, "#0000")?;
+
+      self.context.begin_path();
+      self.context.set_fill_style(&gradient);
+      self.context.rect(0.0, 0.0, self.width, self.height);
       self.context.fill();
     }
 

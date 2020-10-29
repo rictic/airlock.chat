@@ -391,6 +391,13 @@ impl GameAsPlayer {
     Ok(())
   }
 
+  pub fn vision(&self) -> f64 {
+    match self.local_player() {
+      Some(p) => p.vision(&self.state.settings),
+      None => f64::INFINITY,
+    }
+  }
+
   pub fn handle_msg(&mut self, message: ServerToClientMessage) -> Result<(), String> {
     console_log!("Player handling message: {}", message.kind());
     match message {

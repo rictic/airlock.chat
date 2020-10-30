@@ -405,10 +405,10 @@ impl GameAsPlayer {
   pub fn has_won(&self, winning_team: &Team) -> Option<bool> {
     match self.local_player() {
       None => None,
-      Some(p) =>{
+      Some(p) => {
         let impostor_won = match winning_team {
-            Team::Crew => false,
-            Team::Impostors => true,
+          Team::Crew => false,
+          Team::Impostors => true,
         };
         Some(p.impostor == impostor_won)
       }

@@ -157,6 +157,7 @@ impl Broadcaster for PlaybackBroadcaster {
     Ok(())
   }
 }
+
 pub struct PlaybackTx {}
 impl GameTx for PlaybackTx {
   fn send(&self, _: &ClientToServerMessage) -> Result<(), String> {

@@ -2,13 +2,11 @@
 
 mod server;
 
-use crate::server::{client_connected, WebsocketServer};
+use crate::server::game_server;
 use futures::join;
-use std::{error::Error, path::PathBuf};
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::{error::Error, path::PathBuf};
 use warp::Filter;
 
 #[tokio::main]
@@ -31,18 +29,9 @@ Also this server must be run from the server directory."
   // compression algorithm.
   let fileserver = warp::fs::dir(path).with(warp::compression::gzip());
 
-  // Define the websocket server
-  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)?));
-  let gameserver = warp::any().map(move || gameserver.clone());
-  let websocket_server = warp::ws()
-    .and(gameserver)
-    .map(|ws: warp::ws::Ws, gameserver| {
-      ws.on_upgrade(move |socket| client_connected(socket, gameserver))
-    });
-
   // If an incoming request looks like a websockets request, serve it as one,
   // otherwise treat it as a request for a static file
-  let server = websocket_server.or(fileserver);
+  let server = game_server(site_data_path)?.or(fileserver);
 
   // Managed by certbot, see https://certbot.eff.org/lets-encrypt/debianbuster-other
   let privkey = Path::new("/etc/letsencrypt/live/airlock.chat/privkey.pem");

@@ -2,12 +2,12 @@ use futures_channel::mpsc::{unbounded, UnboundedSender};
 use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
 use rust_us_core::ServerToClientMessage;
 use rust_us_core::{Broadcaster, ClientToServerMessage, GameServer, GameStatus, UUID};
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::time::Instant;
+use std::{collections::HashMap, path::PathBuf};
 use tokio::time::delay_for;
 use warp::ws::Message;
 use warp::ws::WebSocket;
@@ -19,16 +19,21 @@ type Room = Arc<Mutex<HashMap<UUID, Tx>>>;
 pub struct WebsocketServer {
   room: Room,
   game_server: Arc<Mutex<GameServer>>,
+  site_data_path: PathBuf,
 }
 
-impl Default for WebsocketServer {
-  fn default() -> Self {
+impl WebsocketServer {
+  pub fn new(site_data_path: PathBuf) -> Self {
     let room = Room::default();
     let game_server = Arc::new(Mutex::new(GameServer::new(
       Box::new(BroadCastServer { room: room.clone() }),
       true,
     )));
-    WebsocketServer { room, game_server }
+    WebsocketServer {
+      room,
+      game_server,
+      site_data_path,
+    }
   }
 }
 

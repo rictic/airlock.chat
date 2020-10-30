@@ -2,16 +2,20 @@
 
 mod server;
 use crate::server::{client_connected, WebsocketServer};
-use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::{error::Error, path::PathBuf};
 use warp::Filter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+  let site_data_path: PathBuf = "../site_data".into();
+  if !site_data_path.exists() {
+    return Err(format!("Expected to find site_data dir at {:?}", site_data_path).into());
+  }
   let addr: SocketAddr = ([0, 0, 0, 0], 3012).into();
-  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::default();
+  let gameserver = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)));
   let gameserver = warp::any().map(move || gameserver.clone());
   let websocket_server = warp::ws()
     .and(gameserver)

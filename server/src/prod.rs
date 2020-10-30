@@ -4,7 +4,7 @@ mod server;
 
 use crate::server::{client_connected, WebsocketServer};
 use futures::join;
-use std::error::Error;
+use std::{error::Error, path::PathBuf};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -21,6 +21,10 @@ Also this server must be run from the server directory."
         .into(),
     );
   }
+  let site_data_path: PathBuf = "../site_data".into();
+  if !site_data_path.exists() {
+    return Err(format!("Could not find site_data directory at {:?}", site_data_path).into());
+  }
 
   // Define the static file server.
   // TODO when I'm smarter, figure out to compress with the best available
@@ -28,7 +32,7 @@ Also this server must be run from the server directory."
   let fileserver = warp::fs::dir(path).with(warp::compression::gzip());
 
   // Define the websocket server
-  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::default();
+  let gameserver: Arc<Mutex<WebsocketServer>> = Arc::new(Mutex::new(WebsocketServer::new(site_data_path)));
   let gameserver = warp::any().map(move || gameserver.clone());
   let websocket_server = warp::ws()
     .and(gameserver)

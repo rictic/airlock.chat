@@ -24,7 +24,7 @@ pub trait Broadcaster: Send {
 // Useful so that we can implement a real game server with web sockets, and the test
 // game server, and potentially a future peer to peer in-client server.
 pub struct GameServer {
-  pub game_id: UUID,
+  game_id: UUID,
   pub version: String,
   pub state: GameState,
   start_time: Instant,
@@ -69,7 +69,8 @@ impl GameServer {
       console_log!("Game won, trying to transmit save game");
       if let Some(recording) = &self.recording {
         console_log!("Recording exists, transmitting...");
-        let replay = &ServerToClientMessage::Replay(RecordedGame::new(self.game_id, recording.to_vec()));
+        let replay =
+          &ServerToClientMessage::Replay(RecordedGame::new(self.game_id, recording.to_vec()));
         match self.broadcaster.broadcast(replay) {
           Ok(()) => console_log!("Transmit successful!"),
           Err(e) => console_log!("Error broadcasting replay: {}", e),

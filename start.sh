@@ -11,6 +11,10 @@ else
   (cd www && npm ci)
 fi
 
+# build the websocket server, so that it starts quickly after the web devserver
+# starts
+cargo build -p server --bin dev
+
 # Start the web devserver
 cd www/
 npx wds --watch --open >/dev/null &

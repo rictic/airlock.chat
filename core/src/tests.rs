@@ -14,6 +14,7 @@ fn pythagoras_was_right() {
 }
 
 struct TestEnvironment {
+  game_id: UUID,
   game_server: GameServer,
   server_to_client_queue: Arc<Mutex<HashMap<UUID, Vec<ServerToClientMessage>>>>,
   players: HashMap<UUID, GameAsPlayer>,
@@ -22,9 +23,11 @@ struct TestEnvironment {
 impl TestEnvironment {
   fn new() -> TestEnvironment {
     let messages: Arc<Mutex<HashMap<UUID, Vec<ServerToClientMessage>>>> = Arc::default();
+    let game_id = UUID::random();
     TestEnvironment {
+      game_id,
       game_server: GameServer::new(
-        UUID::random(),
+        game_id,
         Box::new(TestBroadcaster {
           players: messages.clone(),
         }),
@@ -42,7 +45,7 @@ impl TestEnvironment {
     let queue: Arc<Mutex<Vec<ClientToServerMessage>>> = Arc::default();
     let player = GameAsPlayer::new(
       UUID::random(),
-      self.game_server.game_id,
+      self.game_id,
       Box::new(TestPlayerTx {
         messages: queue.clone(),
       }),

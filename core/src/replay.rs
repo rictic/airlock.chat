@@ -197,7 +197,7 @@ impl PlaybackServer {
 
   pub fn restart(&mut self) {
     let mut game_server = GameServer::new(
-      self.game_server.game_id,
+      self.recording.game_id,
       Box::new(PlaybackBroadcaster {
         pending_messages: self.pending_messages.clone(),
       }),

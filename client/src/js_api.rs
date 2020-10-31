@@ -1,5 +1,5 @@
-use crate::canvas::*;
 use crate::network::create_websocket_and_listen;
+use crate::{canvas::*, network::fetch_replay};
 use instant::Instant;
 use rust_us_core::*;
 use std::sync::Arc;
@@ -253,4 +253,9 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   }
 
   Ok(wrapper)
+}
+
+#[wasm_bindgen]
+pub async fn load_replay_over_network() -> Result<String, JsValue> {
+  fetch_replay(UUID::random()).await
 }

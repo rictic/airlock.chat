@@ -1,17 +1,18 @@
 use crate::js_api::save_recorded_game;
-use rust_us_core::console_log;
 use rust_us_core::get_version_sha;
 use rust_us_core::ClientToServerMessage;
 use rust_us_core::GameAsPlayer;
 use rust_us_core::GameTx;
 use rust_us_core::JoinRequest;
 use rust_us_core::ServerToClientMessage;
+use rust_us_core::{console_log, UUID};
 use std::sync::Arc;
 use std::sync::Mutex;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
-use web_sys::{ErrorEvent, MessageEvent, WebSocket};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{ErrorEvent, MessageEvent, Request, RequestInit, RequestMode, Response, WebSocket};
 
 #[derive(Clone)]
 pub struct WebSocketTx {
@@ -55,6 +56,24 @@ fn get_websocket_url() -> Result<String, JsValue> {
 
   // we're running the prod server locally without TLS
   Ok(format!("ws://{}/", hostname))
+}
+
+pub async fn fetch_replay(game_id: UUID) -> Result<String, JsValue> {
+  let mut opts = RequestInit::new();
+  opts.method("GET");
+  opts.mode(RequestMode::Cors);
+
+  let url =
+    format!("http://localhost:3012/replay_file/0f585e4c1080432f17a192f0d20e49af.airlockreplay");
+
+  let request = Request::new_with_str_and_init(&url, &opts)?;
+  let window = web_sys::window().ok_or("no window")?;
+  let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
+  assert!(resp_value.is_instance_of::<Response>());
+  let resp: Response = resp_value.dyn_into().unwrap();
+  let file_text = JsFuture::from(resp.text()?).await?;
+
+  Ok(file_text.as_string().ok_or("Response text wasn't a string?")?)
 }
 
 // Creates a websocket and hooks it up to the callbacks on the given GameAsPlayer.

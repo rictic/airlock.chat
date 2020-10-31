@@ -11,7 +11,7 @@ use std::{collections::HashMap, path::PathBuf};
 use std::{error::Error, io::Write};
 use tokio::time::delay_for;
 use warp::{filters::BoxedFilter, ws::Message, Reply};
-use warp::{path::Tail, ws::WebSocket, Filter};
+use warp::{ws::WebSocket, Filter};
 
 type Tx = UnboundedSender<Message>;
 type Room = Arc<Mutex<HashMap<UUID, Tx>>>;
@@ -34,35 +34,6 @@ pub fn game_server(site_data_path: PathBuf) -> Result<BoxedFilter<(impl Reply,)>
     .and(warp::filters::fs::dir(site_data_path.join("replays")));
 
   Ok(websocket_server.or(save_server).boxed())
-}
-
-fn save_server(site_data_path: PathBuf) -> BoxedFilter<(impl Reply,)> {
-  warp::path("replay_file")
-    .and(warp::path::tail())
-    .and(move |tail: Tail| {
-      let tail = tail.as_str();
-      if !validate_path(tail) {
-        return warp::filters::fs::file("404");
-      }
-      // replays/{:02x}/{:02x}
-      let replay_path =
-        site_data_path.join(format!("replays/{}/{}/{}", &tail[0..2], &tail[2..4], tail));
-      warp::filters::fs::file("" /* replay_path*/)
-    })
-    .boxed()
-}
-
-fn validate_path(tail: &str) -> bool {
-  // 16 hex characters
-  for ch in (&tail[..32]).chars() {
-    match ch {
-      '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'a' | 'b' | 'c' | 'd' | 'e'
-      | 'f' => (),
-      _ => return false,
-    }
-  }
-  // then .airlockreplay
-  return &tail[32..] == ".airlockreplay";
 }
 
 #[derive(Clone)]

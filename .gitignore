@@ -13,4 +13,6 @@ wasm-pack.log
 /core/target/
 /target/
 
+/site_data/
+
 nohup.out

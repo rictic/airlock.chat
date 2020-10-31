@@ -263,7 +263,18 @@ impl Canvas {
     }
     let game = game.as_ref().unwrap();
     match &game.state.status {
-      GameStatus::Connecting | GameStatus::Disconnected | GameStatus::Won(_) => (),
+      GameStatus::Connecting => (),
+      GameStatus::Disconnected => {
+        self.draw_big_centered_text("Disconnected! D:")?;
+      }
+      GameStatus::Won(team) => {
+        let message = match game.has_won(team) {
+          Some(true) => "You win!".to_string(),
+          Some(false) => "You lose!".to_string(),
+          None => format!("{:?} win!", team),
+        };
+        self.draw_big_centered_text(&message)?;
+      }
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => {
         self.draw_night(&game)?;
       }
@@ -338,6 +349,23 @@ impl Canvas {
         }
       }
     }
+    Ok(())
+  }
+
+  fn draw_big_centered_text(&self, message: &str) -> Result<(), JsValue> {
+    self.context.begin_path();
+    self.context.set_text_align("center");
+    self.context.set_text_baseline("middle");
+    self.context.set_font(&format!(
+      "{}px Arial Black",
+      (48.0 * self.camera.zoom).floor()
+    ));
+    self.context.set_fill_style(&JsValue::from("#000"));
+    self.context.set_stroke_style(&JsValue::from("#fff"));
+    self.context.set_line_width(self.camera.zoom * 4.0);
+    let middle = (self.width / 2.0, self.height / 2.0);
+    self.context.stroke_text(message, middle.0, middle.1)?;
+    self.context.fill_text(message, middle.0, middle.1)?;
     Ok(())
   }
 

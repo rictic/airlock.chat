@@ -391,11 +391,28 @@ impl GameAsPlayer {
     Ok(())
   }
 
+  // Returns the distance that this client should be able to see.
+  // Returns None is they should see everything.
   pub fn vision(&self) -> Option<f64> {
     self
       .local_player()
       .map(|p| p.vision(&self.state.settings))
       .flatten()
+  }
+
+  // Returns whether this client is for a player that won.
+  // Returns None if the client is a spectator.
+  pub fn has_won(&self, winning_team: &Team) -> Option<bool> {
+    match self.local_player() {
+      None => None,
+      Some(p) => {
+        let impostor_won = match winning_team {
+          Team::Crew => false,
+          Team::Impostors => true,
+        };
+        Some(p.impostor == impostor_won)
+      }
+    }
   }
 
   pub fn handle_msg(&mut self, message: ServerToClientMessage) -> Result<(), String> {

@@ -257,7 +257,7 @@ impl GameServer {
           return Ok(None);
         }
         // oh shit it's on
-        self.state.status = GameStatus::Playing(PlayState::Day(DayState {
+        self.state.status = GameStatus::Playing(PlayState::Voting(VotingState {
           votes: BTreeMap::new(),
           time_remaining: self.state.settings.voting_time,
         }));
@@ -382,7 +382,7 @@ impl GameServer {
           return Ok(None);
         }
         // If it's day, and the sender hasn't voted yet, record their vote.
-        if let GameStatus::Playing(PlayState::Day(DayState { votes, .. })) = &mut self.state.status
+        if let GameStatus::Playing(PlayState::Voting(VotingState { votes, .. })) = &mut self.state.status
         {
           if let Entry::Vacant(o) = votes.entry(sender) {
             o.insert(*target);

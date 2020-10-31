@@ -278,7 +278,7 @@ impl Canvas {
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => {
         self.draw_night(&game)?;
       }
-      GameStatus::Playing(PlayState::Day(n)) => {
+      GameStatus::Playing(PlayState::Voting(n)) => {
         self.camera = Camera::get_global_camera((self.width, self.height));
         let voting_ui_state = match &game.contextual_state {
           ContextualState::Voting(v) => Some(v),
@@ -608,8 +608,8 @@ impl Canvas {
   fn draw_day(
     &mut self,
     game: &GameAsPlayer,
-    day_state: &DayState,
-    voting_state: Option<&VotingUiState>,
+    voting_state: &VotingState,
+    ui_state: Option<&VotingUiState>,
   ) -> Result<(), JsValue> {
     let line_width = 25.0 * self.camera.zoom;
     let half_line_width = line_width / 2.0;
@@ -652,7 +652,7 @@ impl Canvas {
       );
 
       let mut is_selected = false;
-      if let Some(voting_state) = voting_state {
+      if let Some(voting_state) = ui_state {
         if voting_state.highlighted_player == Some(VoteTarget::Player { uuid: *uuid }) {
           is_selected = true;
         }
@@ -693,7 +693,7 @@ impl Canvas {
       self.context.fill();
 
       // Draw an "I voted" sticker once they've voted
-      if !player.dead && day_state.votes.contains_key(uuid) {
+      if !player.dead && voting_state.votes.contains_key(uuid) {
         self.context.begin_path();
         let sticker_pos = (
           top_left.0 + (row_inner_height / 2.0) + (0.37 * avatar_radius),
@@ -753,7 +753,7 @@ impl Canvas {
       let top_left = (line_width, (row_height * 5.0) + line_width);
 
       let mut is_selected = false;
-      if let Some(voting_state) = voting_state {
+      if let Some(voting_state) = ui_state {
         if voting_state.highlighted_player == Some(VoteTarget::Skip) {
           is_selected = true;
         }
@@ -802,7 +802,7 @@ impl Canvas {
       self.context.set_text_baseline("middle");
       self
         .context
-        .set_fill_style(&&if day_state.time_remaining < Duration::from_secs(20) {
+        .set_fill_style(&&if voting_state.time_remaining < Duration::from_secs(20) {
           JsValue::from("#d22")
         } else {
           JsValue::from("#fff")
@@ -811,7 +811,7 @@ impl Canvas {
         top_right.0 - (1.5 * line_width),
         top_right.1 + (row_inner_height / 2.0),
       );
-      let text = format!("{}s remaining to vote", day_state.time_remaining.as_secs());
+      let text = format!("{}s remaining to vote", voting_state.time_remaining.as_secs());
       self.context.stroke_text(&text, text_pos.0, text_pos.1)?;
       self.context.fill_text(&text, text_pos.0, text_pos.1)?;
     }

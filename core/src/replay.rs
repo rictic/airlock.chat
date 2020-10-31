@@ -133,9 +133,12 @@ impl PlaybackServer {
   ) -> Result<(), Box<dyn Error>> {
     if from_start < self.current_time {
       self.restart();
+      player.displayed_messages.clear();
     }
     while self.current_time < from_start {
-      let finished = self.simulate(Duration::from_millis(16), player, true)?;
+      let elapsed = Duration::from_millis(16);
+      let finished = self.simulate(elapsed, player, true)?;
+      player.simulate(elapsed);
       if finished {
         // the simulation is done, can't skip past this point
         break;

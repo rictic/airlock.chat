@@ -68,17 +68,32 @@ impl GameState {
     match &self.status {
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.simulate_night(elapsed),
       GameStatus::Playing(PlayState::Voting(day_state)) => {
-        if self.is_day_over(day_state) {
-          match day_state.determine_winner_of_election() {
-            VoteTarget::Skip => { /* The crew have chosen a strange mercy */ }
-            VoteTarget::Player { uuid } => {
+        if self.is_voting_over(day_state) {
+          self.status = GameStatus::Playing(PlayState::TallyingVotes(TallyingState::new(
+            day_state.get_votes_against(),
+          )))
+        }
+      }
+      GameStatus::Playing(PlayState::TallyingVotes(state)) => {
+        if state.is_over() {
+          self.status = GameStatus::Playing(PlayState::ViewingOutcome(ViewOutcomeState::new(
+            state.determine_outcome_of_election(),
+            self,
+          )))
+        }
+      }
+      GameStatus::Playing(PlayState::ViewingOutcome(state)) => {
+        if state.is_over() {
+          match state.outcome {
+            VoteOutcome::Tie => { /* The crew can not coordinate their violence. */ }
+            VoteOutcome::Skip => { /* The crew have chosen a strange mercy */ }
+            VoteOutcome::Player { uuid } => {
               // Kill the lucky winner!
               if let Some(player) = self.players.get_mut(&uuid) {
                 player.dead = true;
               }
             }
           }
-          console_log!("Day is done, now it's night!");
           self.check_for_victories();
           self.bodies.clear();
           self.map.place_players_at_night_start(&mut self.players);
@@ -94,7 +109,7 @@ impl GameState {
     self.status.finished()
   }
 
-  fn is_day_over(&self, day_state: &VotingState) -> bool {
+  fn is_voting_over(&self, day_state: &VotingState) -> bool {
     // Day can end after a timer.
     if day_state.time_remaining <= Duration::from_secs(0) {
       return true;
@@ -857,8 +872,8 @@ impl Player {
     10.0
   }
 
-  pub fn vision(&self, settings: &Settings) -> Option<f64> {
-    if self.dead {
+  pub fn vision(&self, settings: &Settings, status: &GameStatus) -> Option<f64> {
+    if status == &GameStatus::Lobby || self.dead {
       return None;
     }
     if self.impostor {
@@ -868,8 +883,8 @@ impl Player {
     }
   }
 
-  pub fn can_see(&self, settings: &Settings, other: &Position) -> bool {
-    let vision = match self.vision(&settings) {
+  pub fn can_see(&self, settings: &Settings, status: &GameStatus, other: &Position) -> bool {
+    let vision = match self.vision(&settings, status) {
       None => return true,
       Some(v) => v,
     };
@@ -895,11 +910,30 @@ pub enum GameStatus {
 
 impl GameStatus {
   pub fn progress_time(&mut self, elapsed: Duration) {
-    if let GameStatus::Playing(PlayState::Voting(day_state)) = self {
-      day_state.time_remaining = day_state
-        .time_remaining
-        .checked_sub(elapsed)
-        .unwrap_or_else(|| Duration::from_secs(0));
+    match self {
+      GameStatus::Connecting
+      | GameStatus::Disconnected
+      | GameStatus::Won(_)
+      | GameStatus::Lobby => {}
+      GameStatus::Playing(PlayState::Night) => {}
+      GameStatus::Playing(PlayState::Voting(state)) => {
+        state.time_remaining = state
+          .time_remaining
+          .checked_sub(elapsed)
+          .unwrap_or_else(|| Duration::from_secs(0));
+      }
+      GameStatus::Playing(PlayState::TallyingVotes(state)) => {
+        state.time_remaining = state
+          .time_remaining
+          .checked_sub(elapsed)
+          .unwrap_or_else(|| Duration::from_secs(0));
+      }
+      GameStatus::Playing(PlayState::ViewingOutcome(state)) => {
+        state.time_remaining = state
+          .time_remaining
+          .checked_sub(elapsed)
+          .unwrap_or_else(|| Duration::from_secs(0));
+      }
     }
   }
 
@@ -912,12 +946,24 @@ impl GameStatus {
       GameStatus::Disconnected => matches!(other, GameStatus::Disconnected),
     }
   }
+
+  pub fn finished(&self) -> bool {
+    match self {
+      GameStatus::Connecting => false,
+      GameStatus::Lobby => false,
+      GameStatus::Playing(_) => false,
+      GameStatus::Won(_) => true,
+      GameStatus::Disconnected => true,
+    }
+  }
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum PlayState {
   Night,
   Voting(VotingState),
+  TallyingVotes(TallyingState),
+  ViewingOutcome(ViewOutcomeState),
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
@@ -927,26 +973,15 @@ pub struct VotingState {
 }
 
 impl VotingState {
-  pub fn determine_winner_of_election(&self) -> VoteTarget {
-    // Count the votes by the target.
-    let mut vote_count: BTreeMap<VoteTarget, u16> = BTreeMap::new();
-    for (_, target) in self.votes.iter() {
-      *vote_count.entry(*target).or_insert(0) += 1;
+  pub fn get_votes_against(&self) -> BTreeMap<VoteTarget, Vec<UUID>> {
+    let mut votes_against = BTreeMap::new();
+    for (uuid, target) in self.votes.iter() {
+      votes_against
+        .entry(*target)
+        .or_insert(Vec::new())
+        .push(*uuid);
     }
-    // The winner is the one with the most votes!
-    let mut targets_and_votes = vote_count.iter().collect::<Vec<_>>();
-    targets_and_votes.sort_by_key(|(_target, count)| *count);
-    if let Some((winner, winner_votes)) = targets_and_votes.get(0) {
-      if let Some((_runner_up, runner_up_votes)) = targets_and_votes.get(1) {
-        if runner_up_votes == winner_votes {
-          // In case of a tie, skip
-          return VoteTarget::Skip;
-        }
-      }
-      return **winner;
-    }
-    // If no one voted, it's skip.
-    VoteTarget::Skip
+    votes_against
   }
 }
 
@@ -956,15 +991,88 @@ pub enum VoteTarget {
   Skip,
 }
 
-impl GameStatus {
-  pub fn finished(&self) -> bool {
-    match self {
-      GameStatus::Connecting => false,
-      GameStatus::Lobby => false,
-      GameStatus::Playing(_) => false,
-      GameStatus::Won(_) => true,
-      GameStatus::Disconnected => true,
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct TallyingState {
+  pub votes_against: BTreeMap<VoteTarget, Vec<UUID>>,
+  pub time_remaining: Duration,
+}
+
+impl TallyingState {
+  fn new(votes_against: BTreeMap<VoteTarget, Vec<UUID>>) -> Self {
+    Self {
+      votes_against,
+      time_remaining: Duration::from_secs(10),
     }
+  }
+
+  fn is_over(&self) -> bool {
+    self.time_remaining <= Duration::from_secs(0)
+  }
+
+  fn determine_outcome_of_election(&self) -> VoteOutcome {
+    // The winner is the one with the most votes!
+    let mut targets_and_votes = self
+      .votes_against
+      .iter()
+      .map(|(target, voters)| {
+        let target_outcome = match target {
+          VoteTarget::Skip => VoteOutcome::Skip,
+          VoteTarget::Player { uuid } => VoteOutcome::Player { uuid: *uuid },
+        };
+        (target_outcome, voters.len())
+      })
+      .collect::<Vec<_>>();
+    targets_and_votes.sort_by_key(|(_target, count)| *count);
+    if let Some((winner, winner_votes)) = targets_and_votes.get(0) {
+      if let Some((_runner_up, runner_up_votes)) = targets_and_votes.get(1) {
+        if runner_up_votes == winner_votes {
+          return VoteOutcome::Tie;
+        }
+      }
+      return *winner;
+    }
+    // If no one voted, it's skip.
+    VoteOutcome::Tie
+  }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord)]
+pub enum VoteOutcome {
+  Tie,
+  Skip,
+  Player { uuid: UUID },
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct ViewOutcomeState {
+  pub outcome: VoteOutcome,
+  message: String,
+  pub time_remaining: Duration,
+}
+
+impl ViewOutcomeState {
+  pub fn new(outcome: VoteOutcome, game_state: &GameState) -> Self {
+    let message = match outcome {
+      VoteOutcome::Tie => "Vote was a tie. No one went out the airlock.".to_string(),
+      VoteOutcome::Skip => "Voted to skip. No one went out the airlock.".to_string(),
+      VoteOutcome::Player { uuid } => match game_state.players.get(&uuid) {
+        Some(player) => format!("{} was thrown out the airlock", player.name),
+        None => "Can't find who to throw out the airlock? Disconnected player?".to_string(),
+      },
+    };
+    Self {
+      outcome,
+      message,
+      time_remaining: Duration::from_secs(10),
+    }
+  }
+
+  pub fn is_over(&self) -> bool {
+    self.time_remaining <= Duration::from_secs(0)
+  }
+
+  pub fn message(&self) -> &str {
+    &self.message
   }
 }
 

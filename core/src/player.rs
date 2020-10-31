@@ -103,7 +103,11 @@ impl GameAsPlayer {
         self.inputs = new_input;
         Ok(())
       }
-      GameStatus::Connecting | GameStatus::Won(_) | GameStatus::Disconnected => {
+      GameStatus::Playing(PlayState::TallyingVotes(_))
+      | GameStatus::Playing(PlayState::ViewingOutcome(_))
+      | GameStatus::Connecting
+      | GameStatus::Won(_)
+      | GameStatus::Disconnected => {
         // Nothing to do
         Ok(())
       }
@@ -396,7 +400,7 @@ impl GameAsPlayer {
   pub fn vision(&self) -> Option<f64> {
     self
       .local_player()
-      .map(|p| p.vision(&self.state.settings))
+      .map(|p| p.vision(&self.state.settings, &self.state.status))
       .flatten()
   }
 

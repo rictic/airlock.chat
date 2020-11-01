@@ -117,6 +117,7 @@ impl GameWrapper {
       playback_server
         .simulate(elapsed, game, false)
         .map_err(|e| JsValue::from(format!("{}", e)))?;
+      self.write_time_offset_into_url();
     }
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
@@ -124,78 +125,43 @@ impl GameWrapper {
     Ok(game.simulate(elapsed))
   }
 
+  fn write_time_offset_into_url(&self) {
+    let playback_server = match &self.playback_server {
+      None => return,
+      Some(p) => p,
+    };
+    let window = web_sys::window().unwrap_throw();
+    let href = window.location().href().unwrap_throw();
+    let url = web_sys::Url::new(&href).unwrap_throw();
+    url.set_search(&format!(
+      "?recording&time={}",
+      playback_server.current_time().as_secs()
+    ));
+    let new_href = url.href();
+    if href != new_href {
+      window
+        .history()
+        .unwrap_throw()
+        .replace_state_with_url(&JsValue::null(), "Airlock.chat", Some(&new_href))
+        .unwrap_throw();
+    }
+  }
+
+  fn read_time_offset_from_url(&self) -> Option<Duration> {
+    let window = web_sys::window().unwrap_throw();
+    let href = window.location().href().unwrap_throw();
+    let url = web_sys::Url::new(&href).unwrap_throw();
+    let time = match url.search_params().get("time") {
+      None => return None,
+      Some(t) => t,
+    };
+    let time: f64 = time.parse().ok()?;
+    Some(Duration::from_secs_f64(time))
+  }
+
   pub fn draw(&mut self) -> Result<(), JsValue> {
     self.canvas.draw(self.game.clone())
   }
-
-  pub fn get_status(&self) -> String {
-    let game = self.game.lock().unwrap();
-    if game.is_none() {
-      return "Connecting to game...".to_string();
-    }
-    let game = game.as_ref().unwrap();
-    let local_player = game.local_player();
-    if let Some(playback) = &self.playback_server {
-      let paused = playback.paused();
-      let finished = game.state.status.finished();
-      let prefix = match (finished, paused) {
-        (true, _) => "Replay finished at",
-        (false, true) => "Replay paused at",
-        (false, false) => "Watching replay at",
-      };
-      return format!(
-        "{} {} of {}\n{}",
-        prefix,
-        format_time(playback.current_time()),
-        format_time(playback.duration()),
-        self.get_status_internal(&game.state.status, local_player)
-      );
-    }
-    self.get_status_internal(&game.state.status, local_player)
-  }
-
-  fn get_status_internal(&self, status: &GameStatus, local_player: Option<&Player>) -> String {
-    match status {
-      GameStatus::Connecting => "Conecting to game...".to_string(),
-      GameStatus::Disconnected => "Disconnected from server.".to_string(),
-      GameStatus::Lobby => {
-        if let Some(local_player) = local_player {
-          format!(
-            "In the lobby. You're {:?}. Press P to start the game once enough players have joined!",
-            local_player.color
-          )
-        } else {
-          "In the lobby. The game is full so you're spectating.".to_string()
-        }
-      }
-      GameStatus::Won(team) => format!("{:?} win!", team),
-      GameStatus::Playing(PlayState::Night) => {
-        if let Some(local_player) = local_player {
-          if local_player.dead {
-            if local_player.impostor {
-              "You're dead as an impostor! Nothing to do right now but watch.".to_string()
-            } else {
-              "You're dead as a crewmate! Be sure to finish your tasks.".to_string()
-            }
-          } else if local_player.impostor {
-            "You're an impostor! Kill players by getting near them and pressing Q.".to_string()
-          } else {
-            "You're a good crewmate! Go to your tasks and press E to solve them, but watch out for impostors trying to kill you!".to_string()
-          }
-        } else {
-          "The game has begun! You're spectating.".to_string()
-        }
-      }
-      GameStatus::Playing(PlayState::Day(_)) => "".to_string(),
-    }
-  }
-}
-
-fn format_time(duration: Duration) -> String {
-  let secs = duration.as_secs();
-  let minutes = secs / 60;
-  let secs = secs % 60;
-  format!("{}:{:02}", minutes, secs)
 }
 
 fn get_recorded_game() -> Result<Option<RecordedGame>, JsValue> {
@@ -243,7 +209,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
   let location = web_sys::window().ok_or("no window")?.location();
   let should_playback = location.search()?.contains("recording");
-  let wrapper;
+  let mut wrapper;
   if !should_playback {
     wrapper = GameWrapper {
       previous_frame_time: Instant::now(),
@@ -266,15 +232,22 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
       recording.version,
       get_version_sha()
     );
-    let playback_server = Some(PlaybackServer::new(recording));
     let connection = Box::new(PlaybackTx {});
     let mut game_as_player = GameAsPlayer::new(UUID::random(), connection);
     game_as_player.state.status = GameStatus::Lobby;
     wrapper = GameWrapper {
       previous_frame_time: Instant::now(),
       canvas: Canvas::find_in_document()?,
-      playback_server,
+      playback_server: Some(PlaybackServer::new(recording)),
       game: Arc::new(Mutex::new(Some(game_as_player))),
+    };
+    if let Some(offset) = wrapper.read_time_offset_from_url() {
+      if let Some(playback_server) = &mut wrapper.playback_server {
+        let mut game = wrapper.game.lock().unwrap_throw();
+        let game = game.as_mut().unwrap_throw();
+        playback_server.skip_to(offset, game).unwrap_throw();
+        playback_server.toggle_pause();
+      }
     }
   }
 

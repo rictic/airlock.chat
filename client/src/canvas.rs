@@ -1,10 +1,10 @@
 use crate::*;
 use core::time::Duration;
 use rust_us_core::*;
-use std::error::Error;
-use std::f64::consts::PI;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::{collections::BTreeMap, error::Error};
+use std::{collections::BTreeSet, f64::consts::PI};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
@@ -278,13 +278,45 @@ impl Canvas {
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => {
         self.draw_night(&game)?;
       }
-      GameStatus::Playing(PlayState::Day(n)) => {
+      GameStatus::Playing(PlayState::Voting(vote_state)) => {
         self.camera = Camera::get_global_camera((self.width, self.height));
         let voting_ui_state = match &game.contextual_state {
           ContextualState::Voting(v) => Some(v),
           _ => None,
         };
-        self.draw_day(&game, n, voting_ui_state)?
+        let votes = if game.vision().is_some() {
+          BTreeMap::new()
+        } else {
+          // Show voting info immediately for viewers with total sight
+          vote_state.get_votes_against()
+        };
+        self.draw_voting_grid(
+          &game,
+          &vote_state
+            .votes
+            .iter()
+            .map(|(uuid, _target)| *uuid)
+            .collect(),
+          voting_ui_state.map(|s| s.highlighted_player).flatten(),
+          &votes,
+          vote_state.time_remaining,
+          " remaining to vote",
+        )?
+      }
+      GameStatus::Playing(PlayState::TallyingVotes(tally_state)) => {
+        self.camera = Camera::get_global_camera((self.width, self.height));
+        self.draw_voting_grid(
+          &game,
+          &BTreeSet::new(),
+          None,
+          &tally_state.votes_against,
+          tally_state.time_remaining,
+          " until judgment",
+        )?
+      }
+      GameStatus::Playing(PlayState::ViewingOutcome(outcome_state)) => {
+        self.camera = Camera::get_global_camera((self.width, self.height));
+        self.draw_big_centered_text(outcome_state.message())?
       }
     };
 
@@ -388,6 +420,7 @@ impl Canvas {
       }
     };
 
+    // Draw a void beyond the bounds of the map.
     {
       let zero = self.camera.offset(0.0, 0.0);
       if zero.0 > 0.0 {
@@ -435,7 +468,7 @@ impl Canvas {
     };
 
     let can_see = |other: &Position| match local_player {
-      Some(p) => p.can_see(&game.state.settings, other),
+      Some(p) => p.can_see(&game.state.settings, &game.state.status, other),
       None => {
         return true;
       }
@@ -605,11 +638,14 @@ impl Canvas {
     Ok(())
   }
 
-  fn draw_day(
+  fn draw_voting_grid(
     &mut self,
     game: &GameAsPlayer,
-    day_state: &DayState,
-    voting_state: Option<&VotingUiState>,
+    voted: &BTreeSet<UUID>,
+    selected: Option<VoteTarget>,
+    votes: &BTreeMap<VoteTarget, Vec<UUID>>,
+    time_remaining: Duration,
+    time_remaining_message: &str,
   ) -> Result<(), JsValue> {
     let line_width = 25.0 * self.camera.zoom;
     let half_line_width = line_width / 2.0;
@@ -652,10 +688,9 @@ impl Canvas {
       );
 
       let mut is_selected = false;
-      if let Some(voting_state) = voting_state {
-        if voting_state.highlighted_player == Some(VoteTarget::Player { uuid: *uuid }) {
-          is_selected = true;
-        }
+      let this_target = VoteTarget::Player { uuid: *uuid };
+      if selected == Some(this_target) {
+        is_selected = true;
       }
 
       if player.dead || is_selected {
@@ -693,7 +728,7 @@ impl Canvas {
       self.context.fill();
 
       // Draw an "I voted" sticker once they've voted
-      if !player.dead && day_state.votes.contains_key(uuid) {
+      if !player.dead && voted.contains(uuid) {
         self.context.begin_path();
         let sticker_pos = (
           top_left.0 + (row_inner_height / 2.0) + (0.37 * avatar_radius),
@@ -735,17 +770,47 @@ impl Canvas {
       self.context.set_stroke_style(&JsValue::from("#000"));
       self.context.set_text_align("left");
       self.context.set_text_baseline("bottom");
-      self.context.stroke_text(
-        &player.name,
+      let text_pos = (
         top_left.0 + avatar_radius + (3.5 * line_width),
         top_left.1 + (1.5 * line_width),
-      )?;
+      );
+      self
+        .context
+        .stroke_text(&player.name, text_pos.0, text_pos.1)?;
       self.context.set_fill_style(&JsValue::from("#fff"));
-      self.context.fill_text(
-        &player.name,
-        top_left.0 + avatar_radius + (3.5 * line_width),
-        top_left.1 + (1.5 * line_width),
-      )?;
+      self
+        .context
+        .fill_text(&player.name, text_pos.0, text_pos.1)?;
+
+      // Draw icons for those who voted for this player
+      if let Some(voters) = votes.get(&this_target) {
+        let bottom_left = (top_left.0, top_left.1 + row_inner_height);
+        for (i, voter) in voters.iter().enumerate() {
+          let color = game
+            .state
+            .players
+            .get(voter)
+            .map(|p| p.color)
+            .unwrap_or(Color::Black);
+          let radius = ((24.0 * self.camera.zoom).floor()) / 2.0;
+          let center = (
+            bottom_left.0
+              + avatar_radius
+              + (3.5 * line_width)
+              + radius
+              + (((radius * 2.0) + 15.0) * i as f64),
+            bottom_left.1 - (1.5 * line_width),
+          );
+          self.context.begin_path();
+          self.context.set_stroke_style(&"#000".into());
+          self.context.set_fill_style(&color.to_str().into());
+          self
+            .context
+            .arc(center.0, center.1, radius, 0.0, 2.0 * PI)?;
+          self.context.stroke();
+          self.context.fill();
+        }
+      }
     }
 
     {
@@ -753,10 +818,8 @@ impl Canvas {
       let top_left = (line_width, (row_height * 5.0) + line_width);
 
       let mut is_selected = false;
-      if let Some(voting_state) = voting_state {
-        if voting_state.highlighted_player == Some(VoteTarget::Skip) {
-          is_selected = true;
-        }
+      if selected == Some(VoteTarget::Skip) {
+        is_selected = true;
       }
 
       if is_selected {
@@ -785,6 +848,31 @@ impl Canvas {
       );
       self.context.stroke_text("Skip", text_pos.0, text_pos.1)?;
       self.context.fill_text("Skip", text_pos.0, text_pos.1)?;
+
+      if let Some(voters) = votes.get(&VoteTarget::Skip) {
+        let bottom_left = (top_left.0, top_left.1 + row_inner_height);
+        for (i, voter) in voters.iter().enumerate() {
+          let color = game
+            .state
+            .players
+            .get(voter)
+            .map(|p| p.color)
+            .unwrap_or(Color::Black);
+          let radius = ((24.0 * self.camera.zoom).floor()) / 2.0;
+          let center = (
+            bottom_left.0 + (1.0 * line_width) + radius + (((radius * 2.0) + 15.0) * i as f64),
+            text_pos.1 + (24.0 * self.camera.zoom) + radius,
+          );
+          self.context.begin_path();
+          self.context.set_stroke_style(&"#000".into());
+          self.context.set_fill_style(&color.to_str().into());
+          self
+            .context
+            .arc(center.0, center.1, radius, 0.0, 2.0 * PI)?;
+          self.context.stroke();
+          self.context.fill();
+        }
+      }
     }
 
     {
@@ -802,7 +890,7 @@ impl Canvas {
       self.context.set_text_baseline("middle");
       self
         .context
-        .set_fill_style(&&if day_state.time_remaining < Duration::from_secs(20) {
+        .set_fill_style(&&if time_remaining < Duration::from_secs(20) {
           JsValue::from("#d22")
         } else {
           JsValue::from("#fff")
@@ -811,7 +899,7 @@ impl Canvas {
         top_right.0 - (1.5 * line_width),
         top_right.1 + (row_inner_height / 2.0),
       );
-      let text = format!("{}s remaining to vote", day_state.time_remaining.as_secs());
+      let text = format!("{}s{}", time_remaining.as_secs(), time_remaining_message);
       self.context.stroke_text(&text, text_pos.0, text_pos.1)?;
       self.context.fill_text(&text, text_pos.0, text_pos.1)?;
     }

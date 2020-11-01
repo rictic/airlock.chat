@@ -90,7 +90,7 @@ impl GameAsPlayer {
   pub fn take_input(&mut self, new_input: InputState) -> Result<(), String> {
     match &self.state.status {
       GameStatus::Lobby | GameStatus::Playing(PlayState::Night) => self.take_night_input(new_input),
-      GameStatus::Playing(PlayState::Day(day_state)) => {
+      GameStatus::Playing(PlayState::Voting(day_state)) => {
         let updated_voting_state = self.take_day_input(day_state, new_input)?;
         if let Some(updated_voting_state) = updated_voting_state {
           match &mut self.contextual_state {
@@ -103,7 +103,11 @@ impl GameAsPlayer {
         self.inputs = new_input;
         Ok(())
       }
-      GameStatus::Connecting | GameStatus::Won(_) | GameStatus::Disconnected => {
+      GameStatus::Playing(PlayState::TallyingVotes(_))
+      | GameStatus::Playing(PlayState::ViewingOutcome(_))
+      | GameStatus::Connecting
+      | GameStatus::Won(_)
+      | GameStatus::Disconnected => {
         // Nothing to do
         Ok(())
       }
@@ -165,7 +169,7 @@ impl GameAsPlayer {
 
   fn take_day_input(
     &self,
-    day_state: &DayState,
+    day_state: &VotingState,
     new_input: InputState,
   ) -> Result<Option<VotingUiState>, String> {
     let pressed = self.inputs.get_new_presses(new_input);
@@ -396,7 +400,7 @@ impl GameAsPlayer {
   pub fn vision(&self) -> Option<f64> {
     self
       .local_player()
-      .map(|p| p.vision(&self.state.settings))
+      .map(|p| p.vision(&self.state.settings, &self.state.status))
       .flatten()
   }
 
@@ -490,7 +494,7 @@ impl GameAsPlayer {
     if !self.state.status.is_same_kind(&new_status) {
       self.inputs = InputState::default();
     }
-    if let GameStatus::Playing(PlayState::Day(_)) = new_status {
+    if let GameStatus::Playing(PlayState::Voting(_)) = new_status {
       match self.contextual_state {
         ContextualState::Voting(_) => (),
         _ => self.contextual_state = ContextualState::Voting(VotingUiState::default()),

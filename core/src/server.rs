@@ -382,7 +382,8 @@ impl GameServer {
           return Ok(None);
         }
         // If it's day, and the sender hasn't voted yet, record their vote.
-        if let GameStatus::Playing(PlayState::Voting(VotingState { votes, .. })) = &mut self.state.status
+        if let GameStatus::Playing(PlayState::Voting(VotingState { votes, .. })) =
+          &mut self.state.status
         {
           if let Entry::Vacant(o) = votes.entry(sender) {
             o.insert(*target);

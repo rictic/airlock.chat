@@ -117,11 +117,46 @@ impl GameWrapper {
       playback_server
         .simulate(elapsed, game, false)
         .map_err(|e| JsValue::from(format!("{}", e)))?;
+      self.write_time_offset_into_url();
     }
     if game.state.status == GameStatus::Connecting {
       return Ok(false);
     }
     Ok(game.simulate(elapsed))
+  }
+
+  fn write_time_offset_into_url(&self) {
+    let playback_server = match &self.playback_server {
+      None => return,
+      Some(p) => p,
+    };
+    let window = web_sys::window().unwrap_throw();
+    let href = window.location().href().unwrap_throw();
+    let url = web_sys::Url::new(&href).unwrap_throw();
+    url.set_search(&format!(
+      "?recording&time={}",
+      playback_server.current_time().as_secs()
+    ));
+    let new_href = url.href();
+    if href != new_href {
+      window
+        .history()
+        .unwrap_throw()
+        .replace_state_with_url(&JsValue::null(), "Airlock.chat", Some(&new_href))
+        .unwrap_throw();
+    }
+  }
+
+  fn read_time_offset_from_url(&self) -> Option<Duration> {
+    let window = web_sys::window().unwrap_throw();
+    let href = window.location().href().unwrap_throw();
+    let url = web_sys::Url::new(&href).unwrap_throw();
+    let time = match url.search_params().get("time") {
+      None => return None,
+      Some(t) => t,
+    };
+    let time: f64 = time.parse().ok()?;
+    Some(Duration::from_secs_f64(time))
   }
 
   pub fn draw(&mut self) -> Result<(), JsValue> {
@@ -174,7 +209,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
   let location = web_sys::window().ok_or("no window")?.location();
   let should_playback = location.search()?.contains("recording");
-  let wrapper;
+  let mut wrapper;
   if !should_playback {
     wrapper = GameWrapper {
       previous_frame_time: Instant::now(),
@@ -197,15 +232,22 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
       recording.version,
       get_version_sha()
     );
-    let playback_server = Some(PlaybackServer::new(recording));
     let connection = Box::new(PlaybackTx {});
     let mut game_as_player = GameAsPlayer::new(UUID::random(), connection);
     game_as_player.state.status = GameStatus::Lobby;
     wrapper = GameWrapper {
       previous_frame_time: Instant::now(),
       canvas: Canvas::find_in_document()?,
-      playback_server,
+      playback_server: Some(PlaybackServer::new(recording)),
       game: Arc::new(Mutex::new(Some(game_as_player))),
+    };
+    if let Some(offset) = wrapper.read_time_offset_from_url() {
+      if let Some(playback_server) = &mut wrapper.playback_server {
+        let mut game = wrapper.game.lock().unwrap_throw();
+        let game = game.as_mut().unwrap_throw();
+        playback_server.skip_to(offset, game).unwrap_throw();
+        playback_server.toggle_pause();
+      }
     }
   }
 

@@ -19,7 +19,8 @@ async function getName() {
 
 async function init() {
   await initWasm();
-  console.log(await wasm.load_replay_over_network());
+  console.log(
+      await wasm.load_replay_over_network('0c15b58d38e1bf3de326c2bd5d03397e'));
   let name = window.localStorage.getItem('name');
   if (typeof name !== 'string') {
     name = await getName();

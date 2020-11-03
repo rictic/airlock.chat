@@ -256,6 +256,6 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
 }
 
 #[wasm_bindgen]
-pub async fn load_replay_over_network() -> Result<String, JsValue> {
-  fetch_replay(UUID::random()).await
+pub async fn load_replay_over_network(game_id: String) -> Result<String, JsValue> {
+  fetch_replay(serde_json::from_str(&format!("\"{}\"", game_id)).unwrap()).await
 }

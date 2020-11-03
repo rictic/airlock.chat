@@ -63,17 +63,23 @@ pub async fn fetch_replay(game_id: UUID) -> Result<String, JsValue> {
   opts.method("GET");
   opts.mode(RequestMode::Cors);
 
-  let url =
-    format!("http://localhost:3012/replay_file/0f585e4c1080432f17a192f0d20e49af.airlockreplay");
+  let url = format!(
+    "http://localhost:3012/replay_file/{}.airlockreplay",
+    game_id
+  );
 
   let request = Request::new_with_str_and_init(&url, &opts)?;
   let window = web_sys::window().ok_or("no window")?;
   let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
   assert!(resp_value.is_instance_of::<Response>());
-  let resp: Response = resp_value.dyn_into().unwrap();
+  let resp: Response = resp_value.dyn_into()?;
   let file_text = JsFuture::from(resp.text()?).await?;
 
-  Ok(file_text.as_string().ok_or("Response text wasn't a string?")?)
+  Ok(
+    file_text
+      .as_string()
+      .ok_or("Response text wasn't a string?")?,
+  )
 }
 
 // Creates a websocket and hooks it up to the callbacks on the given GameAsPlayer.

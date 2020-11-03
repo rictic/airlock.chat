@@ -10,7 +10,7 @@ use std::time::Instant;
 use std::{collections::HashMap, path::PathBuf};
 use std::{error::Error, io::Write};
 use tokio::time::delay_for;
-use warp::{filters::BoxedFilter, ws::Message, Reply};
+use warp::{filters::BoxedFilter, path::Tail, ws::Message, Reply};
 use warp::{ws::WebSocket, Filter};
 
 type Tx = UnboundedSender<Message>;
@@ -20,6 +20,8 @@ type Room = Arc<Mutex<HashMap<UUID, Tx>>>;
 // the BoxedFilter part, but figuring out the types... whoo boy.
 // https://github.com/seanmonstar/warp/blob/master/examples/returning.rs
 pub fn game_server(site_data_path: PathBuf) -> Result<BoxedFilter<(impl Reply,)>, Box<dyn Error>> {
+  let site_data_path = Arc::new(site_data_path);
+
   // Define the websocket server
   let gameserver: Arc<Mutex<WebsocketServer>> =
     Arc::new(Mutex::new(WebsocketServer::new(site_data_path.clone())?));
@@ -30,21 +32,64 @@ pub fn game_server(site_data_path: PathBuf) -> Result<BoxedFilter<(impl Reply,)>
       ws.on_upgrade(move |socket| client_connected(socket, gameserver))
     });
 
+  let site_data_path = warp::any().map(move || site_data_path.clone());
   let save_server = warp::path("replay_file")
-    .and(warp::filters::fs::dir(site_data_path.join("replays")));
+    .and(warp::path::tail())
+    .and(site_data_path)
+    .and_then(serve_save);
 
   Ok(websocket_server.or(save_server).boxed())
+}
+
+async fn serve_save(
+  tail: Tail,
+  site_data_path: Arc<PathBuf>,
+) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
+  let tail = tail.as_str();
+  if !validate_path(tail) {
+    return Ok(Box::new(http::StatusCode::BAD_REQUEST));
+  }
+  let replay_path =
+    site_data_path.join(format!("replays/{}/{}/{}", &tail[0..2], &tail[2..4], tail));
+
+  // TODO: instead get a stream instead of a string, and gzip
+  let contents = match tokio::fs::read_to_string(replay_path.clone()).await {
+    Ok(contents) => contents,
+    Err(e) => {
+      println!("Error reading file {:?}: {}", replay_path, e);
+      return Ok(Box::new(http::StatusCode::INTERNAL_SERVER_ERROR));
+    }
+  };
+
+  return Ok(Box::new(
+    http::Response::builder()
+      .header("Access-Control-Allow-Origin", "*")
+      .body(contents),
+  ));
+}
+
+fn validate_path(tail: &str) -> bool {
+  // 16 hex characters
+  for ch in (&tail[..32]).chars() {
+    match ch {
+      '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'a' | 'b' | 'c' | 'd' | 'e'
+      | 'f' => (),
+      _ => return false,
+    }
+  }
+  // then .airlockreplay
+  return &tail[32..] == ".airlockreplay";
 }
 
 #[derive(Clone)]
 pub struct WebsocketServer {
   room: Room,
   game_server: Arc<Mutex<GameServer>>,
-  site_data_path: PathBuf,
+  site_data_path: Arc<PathBuf>,
 }
 
 impl WebsocketServer {
-  pub fn new(site_data_path: PathBuf) -> Result<Self, Box<dyn Error>> {
+  pub fn new(site_data_path: Arc<PathBuf>) -> Result<Self, Box<dyn Error>> {
     let (room, game_server) = make_new_game(site_data_path.as_path())?;
     Ok(WebsocketServer {
       room,

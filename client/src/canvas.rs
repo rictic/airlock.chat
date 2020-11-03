@@ -8,34 +8,6 @@ use std::{collections::BTreeSet, f64::consts::PI};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
-fn find_canvas_in_document() -> Result<
-  (
-    web_sys::HtmlCanvasElement,
-    web_sys::CanvasRenderingContext2d,
-  ),
-  Box<dyn Error>,
-> {
-  let document = web_sys::window()
-    .ok_or("Could not get window")?
-    .document()
-    .ok_or("Could not get document")?;
-  let canvas = document
-    .get_element_by_id("canvas")
-    .ok_or("Could not find element with id 'canvas'")?;
-  let canvas: web_sys::HtmlCanvasElement = canvas
-    .dyn_into::<web_sys::HtmlCanvasElement>()
-    .map_err(|_| "Element with id 'canvas' isn't a canvas element")?;
-
-  let context = canvas
-    .get_context("2d")
-    .map_err(|_| "Could not get 2d canvas context")?
-    .ok_or("Got null 2d canvas context")?
-    .dyn_into::<web_sys::CanvasRenderingContext2d>()
-    .map_err(|_| "Returned value was not a CanvasRenderingContext2d")?;
-
-  Ok((canvas, context))
-}
-
 pub struct Canvas {
   width: f64,
   height: f64,
@@ -228,9 +200,24 @@ impl Canvas {
     })
   }
 
-  pub fn find_in_document() -> Result<Canvas, JsValue> {
-    let (canvas_element, context) =
-      find_canvas_in_document().map_err(|e| JsValue::from(format!("{}", e)))?;
+  pub fn create_and_append() -> Result<Canvas, JsValue> {
+    let document = web_sys::window().unwrap().document().unwrap();
+    let body = document.body().expect("Could not find document.body");
+    let canvas_node = document
+      .create_element("canvas")
+      .unwrap()
+      .dyn_into::<web_sys::Node>()
+      .unwrap();
+    body.append_child(&canvas_node)?;
+    let canvas_element = canvas_node
+      .dyn_into::<web_sys::HtmlCanvasElement>()
+      .map_err(|_| "Element with id 'canvas' isn't a canvas element")?;
+    let context = canvas_element
+      .get_context("2d")
+      .map_err(|_| "Could not get 2d canvas context")?
+      .ok_or("Got null 2d canvas context")?
+      .dyn_into::<web_sys::CanvasRenderingContext2d>()
+      .map_err(|_| "Returned value was not a CanvasRenderingContext2d")?;
     Canvas::new(context, canvas_element)
   }
 

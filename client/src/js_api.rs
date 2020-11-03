@@ -2,9 +2,10 @@ use crate::network::create_websocket_and_listen;
 use crate::{canvas::*, network::fetch_replay};
 use instant::Instant;
 use rust_us_core::*;
-use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
+use std::{io::BufReader, sync::Arc};
+use stringreader::StringReader;
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -213,7 +214,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   if !should_playback {
     wrapper = GameWrapper {
       previous_frame_time: Instant::now(),
-      canvas: Canvas::find_in_document()?,
+      canvas: Canvas::create_and_append()?,
       game: Arc::new(Mutex::new(None)),
       playback_server: None,
     };
@@ -232,16 +233,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
       recording.version,
       get_version_sha()
     );
-    let game_id = recording.game_id;
-    let connection = Box::new(PlaybackTx {});
-    let mut game_as_player = GameAsPlayer::new(UUID::random(), game_id, connection);
-    game_as_player.state.status = GameStatus::Lobby;
-    wrapper = GameWrapper {
-      previous_frame_time: Instant::now(),
-      canvas: Canvas::find_in_document()?,
-      playback_server: Some(PlaybackServer::new(recording)),
-      game: Arc::new(Mutex::new(Some(game_as_player))),
-    };
+    wrapper = game_wrapper_for_recording(recording)?;
     if let Some(offset) = wrapper.read_time_offset_from_url() {
       if let Some(playback_server) = &mut wrapper.playback_server {
         let mut game = wrapper.game.lock().unwrap_throw();
@@ -255,7 +247,44 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   Ok(wrapper)
 }
 
-#[wasm_bindgen]
+fn game_wrapper_for_recording(recording: RecordedGame) -> Result<GameWrapper, JsValue> {
+  let game_id = recording.game_id;
+  let playback_server = Some(PlaybackServer::new(recording));
+  let connection = Box::new(PlaybackTx {});
+  let mut game_as_player = GameAsPlayer::new(UUID::random(), game_id, connection);
+  game_as_player.state.status = GameStatus::Lobby;
+  Ok(GameWrapper {
+    previous_frame_time: Instant::now(),
+    canvas: Canvas::create_and_append()?,
+    playback_server,
+    game: Arc::new(Mutex::new(Some(game_as_player))),
+  })
+}
+
 pub async fn load_replay_over_network(game_id: String) -> Result<String, JsValue> {
   fetch_replay(serde_json::from_str(&format!("\"{}\"", game_id)).unwrap()).await
+}
+
+#[wasm_bindgen]
+pub fn create_replay_game_from_string(
+  replay_file_contents: String,
+) -> Result<GameWrapper, JsValue> {
+  // TODO: don't buffer the entire replay into a string, instead consume it as
+  // a real stream.
+  let streader = StringReader::new(&replay_file_contents);
+  let bufreader = BufReader::new(streader);
+  let recording = match RecordedGame::read(bufreader) {
+    Ok(v) => v,
+    Err(RecordingReadError::VersionMismatch { found }) => {
+      return Err(JsValue::from(format!(
+        "Got version {} but expected {}",
+        found,
+        get_version_sha()
+      )))
+    }
+    Err(RecordingReadError::Err(e)) => {
+      return Err(JsValue::from(format!("{}", e)));
+    }
+  };
+  game_wrapper_for_recording(recording)
 }

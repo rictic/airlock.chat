@@ -1023,7 +1023,7 @@ impl TallyingState {
       })
       .collect::<Vec<_>>();
     targets_and_votes.sort_by_key(|(_target, count)| *count);
-    if let Some((winner, winner_votes)) = targets_and_votes.get(0) {
+    if let Some((winner, winner_votes)) = targets_and_votes.get(targets_and_votes.len() - 1) {
       if let Some((_runner_up, runner_up_votes)) = targets_and_votes.get(1) {
         if runner_up_votes == winner_votes {
           return VoteOutcome::Tie;

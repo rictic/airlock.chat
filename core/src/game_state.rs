@@ -602,6 +602,30 @@ impl UUID {
   pub fn random() -> UUID {
     UUID { v: rand::random() }
   }
+
+  pub fn from_str(value: &str) -> Result<UUID, String> {
+    if value.len() != 32 {
+      return Err(format!(
+        "expected UUID string to be len 32, was {}",
+        value.len()
+      ));
+    }
+    let mut bytes = [0; 16];
+    for (i, byte) in bytes.iter_mut().enumerate() {
+      let si = i * 2;
+      let hex_byte = &value[si..si + 2];
+      *byte = match u8::from_str_radix(hex_byte, 16) {
+        Ok(v) => v,
+        Err(_) => {
+          return Err(format!(
+            "expected hex, but found {} at offset {}",
+            hex_byte, si
+          ))
+        }
+      }
+    }
+    Ok(UUID { v: bytes })
+  }
 }
 
 impl Serialize for UUID {
@@ -626,27 +650,7 @@ impl<'de> Visitor<'de> for UUIDVisitor {
   where
     E: de::Error,
   {
-    if value.len() != 32 {
-      return Err(E::custom(format!(
-        "expected UUID string to be len 32, was {}",
-        value.len()
-      )));
-    }
-    let mut bytes = [0; 16];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-      let si = i * 2;
-      let hex_byte = &value[si..si + 2];
-      *byte = match u8::from_str_radix(hex_byte, 16) {
-        Ok(v) => v,
-        Err(_) => {
-          return Err(E::custom(format!(
-            "expected hex, but found {} at offset {}",
-            hex_byte, si
-          )))
-        }
-      }
-    }
-    Ok(UUID { v: bytes })
+    UUID::from_str(value).map_err(|e| E::custom(e))
   }
 }
 impl<'de> Deserialize<'de> for UUID {

@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::{io::BufReader, sync::Arc};
 use stringreader::StringReader;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -206,10 +207,29 @@ pub fn save_recorded_game(encoded_game: &str) -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
+pub async fn make_game(name: String) -> Result<Option<GameWrapper>, JsValue> {
   crate::utils::set_panic_hook();
   let location = web_sys::window().ok_or("no window")?.location();
-  let should_playback = location.search()?.contains("recording");
+  let url = web_sys::Url::new(&location.href()?)?;
+  let params = url.search_params();
+  let game_id = params.get("replay_game");
+
+  if let Some(game_id) = game_id {
+    let game_id = UUID::from_str(&game_id)?;
+    let replay_str = fetch_replay(game_id).await?;
+    let version = params.get("force_version");
+    let document = web_sys::window().unwrap().document().unwrap();
+    let iframe = document
+      .create_element("iframe")
+      .unwrap()
+      .dyn_into::<web_sys::Node>()
+      .unwrap();
+    document.body().unwrap().append_child(&iframe)?;
+    let iframe = iframe.dyn_into::<web_sys::HtmlIFrameElement>().unwrap();
+    iframe.set_src("/replay_player.html");
+    return Ok(None);
+  }
+  let should_playback = params.has("recording");
   let mut wrapper;
   if !should_playback {
     wrapper = GameWrapper {
@@ -244,7 +264,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
     }
   }
 
-  Ok(wrapper)
+  Ok(Some(wrapper))
 }
 
 fn game_wrapper_for_recording(recording: RecordedGame) -> Result<GameWrapper, JsValue> {
@@ -259,10 +279,6 @@ fn game_wrapper_for_recording(recording: RecordedGame) -> Result<GameWrapper, Js
     playback_server,
     game: Arc::new(Mutex::new(Some(game_as_player))),
   })
-}
-
-pub async fn load_replay_over_network(game_id: String) -> Result<String, JsValue> {
-  fetch_replay(serde_json::from_str(&format!("\"{}\"", game_id)).unwrap()).await
 }
 
 #[wasm_bindgen]

@@ -27,7 +27,10 @@ async function init() {
     name = await getName();
     window.localStorage.setItem('name', name);
   }
-  new GameHandler(wasm.make_game(name));
+  let game = await wasm.make_game(name);
+  if (game) {
+    new GameHandler(game);
+  }
 }
 
 init().catch((e) => {

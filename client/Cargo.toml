@@ -57,6 +57,7 @@ features = [
   'ErrorEvent',
   'FileReader',
   'Headers',
+  'HtmlIFrameElement',
   'HtmlCanvasElement',
   'History',
   'Location',

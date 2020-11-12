@@ -5,13 +5,17 @@
 1. [install the rust toolchain](https://www.rust-lang.org/tools/install)
 2. [install npm](https://www.npmjs.com/get-npm)
 3. [install wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
-4. install some more deps `apt-get install gcc libssl-dev pkg-config`
+4. install some more deps `apt-get install gcc libssl-dev pkg-config lld`
 5. clone this repo
 6. cd rust-us
 7. ./start.sh
 8. Once you see `ℹ ｢wdm｣: Compiled successfully.`, open your browser to http://localhost:8080/
 
 This will also automatically watch the rust code in `./src/` and incrementally rebuild on changes. If you're lucky, your web browser will also automatically reload after a successful build.
+
+## Improve Build Performance
+
+This guide has a few pointers. I got ~20% faster compiles by following it: https://bevyengine.org/learn/book/getting-started/setup/#enable-fast-compiles-optional
 
 ## Based off of wasm-pack-template
 

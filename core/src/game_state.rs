@@ -1023,16 +1023,88 @@ impl TallyingState {
       })
       .collect::<Vec<_>>();
     targets_and_votes.sort_by_key(|(_target, count)| *count);
-    if let Some((winner, winner_votes)) = targets_and_votes.get(0) {
-      if let Some((_runner_up, runner_up_votes)) = targets_and_votes.get(1) {
+    let mut most_voted = targets_and_votes.into_iter().rev();
+    if let Some((winner, winner_votes)) = most_voted.next() {
+      if let Some((_runner_up, runner_up_votes)) = most_voted.next() {
         if runner_up_votes == winner_votes {
           return VoteOutcome::Tie;
         }
       }
-      return *winner;
+      return winner;
     }
     // If no one voted, it's skip.
     VoteOutcome::Tie
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use crate::*;
+
+  #[test]
+  fn test_vote_outcome_no_votes() {
+    let state = TallyingState::new(Default::default());
+    assert_eq!(state.determine_outcome_of_election(), VoteOutcome::Tie);
+  }
+
+  #[test]
+  fn test_vote_outcome_one_vote_skip() {
+    let uuid = UUID::random();
+    let state = TallyingState::new(vec![(VoteTarget::Skip, vec![uuid])].into_iter().collect());
+    assert_eq!(state.determine_outcome_of_election(), VoteOutcome::Skip);
+  }
+
+  #[test]
+  fn test_vote_outcome_one_vote_player() {
+    let uuid = UUID::random();
+    let state = TallyingState::new(
+      vec![(VoteTarget::Player { uuid }, vec![uuid])]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(
+      state.determine_outcome_of_election(),
+      VoteOutcome::Player { uuid }
+    );
+  }
+
+  #[test]
+  fn test_vote_outcome_one_majority_vote() {
+    let guilty = UUID::random();
+    let p1 = UUID::random();
+    let p2 = UUID::random();
+    let p3 = UUID::random();
+    let state = TallyingState::new(
+      vec![
+        (VoteTarget::Player { uuid: guilty }, vec![p1, p2, p3]),
+        (VoteTarget::Player { uuid: p1 }, vec![guilty]),
+      ]
+      .into_iter()
+      .collect(),
+    );
+    assert_eq!(
+      state.determine_outcome_of_election(),
+      VoteOutcome::Player { uuid: guilty }
+    );
+  }
+
+  #[test]
+  fn test_vote_outcome_tie() {
+    let p1 = UUID::random();
+    let p2 = UUID::random();
+    let p3 = UUID::random();
+    let p4 = UUID::random();
+    let p5 = UUID::random();
+    let state = TallyingState::new(
+      vec![
+        (VoteTarget::Player { uuid: p1 }, vec![p1, p2]),
+        (VoteTarget::Player { uuid: p2 }, vec![p3, p4]),
+        (VoteTarget::Skip, vec![p5]),
+      ]
+      .into_iter()
+      .collect(),
+    );
+    assert_eq!(state.determine_outcome_of_election(), VoteOutcome::Tie);
   }
 }
 

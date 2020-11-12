@@ -94,9 +94,9 @@ impl GameState {
               }
             }
           }
-          self.check_for_victories();
           self.bodies.clear();
           self.map.place_players_at_night_start(&mut self.players);
+          self.check_for_victories();
           // Now it's night!
           self.status = GameStatus::Playing(PlayState::Night);
         }
@@ -253,10 +253,15 @@ impl GameState {
   fn check_for_crew_win(&mut self) {
     let all_crew_tasks_finished = self
       .players
-      .iter()
-      .filter(|(_, p)| !p.impostor)
-      .all(|(_, p)| p.tasks.iter().all(|t| t.finished));
-    if all_crew_tasks_finished {
+      .values()
+      .filter(|p| !p.impostor)
+      .all(|p| p.tasks.iter().all(|t| t.finished));
+    let no_impostors_left = self
+      .players
+      .values()
+      .find(|p| p.impostor && !p.dead)
+      .is_none();
+    if all_crew_tasks_finished || no_impostors_left {
       self.win(Team::Crew);
     }
   }
@@ -1135,7 +1140,7 @@ impl ViewOutcomeState {
     Self {
       outcome,
       message,
-      time_remaining: Duration::from_secs(10),
+      time_remaining: Duration::from_secs(7),
     }
   }
 

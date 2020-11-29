@@ -15,13 +15,19 @@ fi
 # starts
 cargo build -p server --bin dev
 
+# Make sure cargo-watch is installed
+cargo install cargo-watch
+
+# build the client once
+cd client
+rustup run nightly wasm-pack build --target web --dev
+cd ../
+
 # Start the web devserver
 cd www/
 npx wds --watch --open >/dev/null &
 cd ../
 
-# Make sure cargo-watch is installed
-cargo install cargo-watch
 
 # Start the websocket server, and rebuild and relaunch it as necessary.
 cd server/

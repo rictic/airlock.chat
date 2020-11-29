@@ -3,7 +3,7 @@ use core::time::Duration;
 use rust_us_core::*;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::{collections::BTreeMap, error::Error};
+use std::{collections::BTreeMap};
 use std::{collections::BTreeSet, f64::consts::PI};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;

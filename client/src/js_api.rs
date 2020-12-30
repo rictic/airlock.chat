@@ -209,6 +209,7 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
   crate::utils::set_panic_hook();
   let location = web_sys::window().ok_or("no window")?.location();
   let should_playback = location.search()?.contains("recording");
+  let spectate = location.search()?.contains("spectate");
   let mut wrapper;
   if !should_playback {
     wrapper = GameWrapper {
@@ -217,9 +218,13 @@ pub fn make_game(name: String) -> Result<GameWrapper, JsValue> {
       game: Arc::new(Mutex::new(None)),
       playback_server: None,
     };
-    let join = JoinRequest::JoinAsPlayer {
-      name,
-      preferred_color: Color::random(),
+    let join = if spectate {
+      JoinRequest::JoinAsSpectator
+    } else {
+      JoinRequest::JoinAsPlayer {
+        name,
+        preferred_color: Color::random(),
+      }
     };
     create_websocket_and_listen(wrapper.game.clone(), join)?;
   } else {

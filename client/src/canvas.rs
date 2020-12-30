@@ -334,7 +334,7 @@ impl Canvas {
       .filter(|m| m.ready_to_display())
       .map(|m| m.message.clone())
       .collect();
-    if game.state.status == GameStatus::Lobby {
+    if game.state.status == GameStatus::Lobby && game.local_player().is_some() {
       messages.push(Message::PlainString(format!(
         "In the lobby. {}/10 players",
         game.state.players.len()

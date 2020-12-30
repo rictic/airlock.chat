@@ -1,5 +1,7 @@
 import initWasm, * as wasm from './wasm/client.js';
 
+const spectatorMode = /spectate/.test(window.location.search);
+
 async function getName() {
   const input = document.createElement('input');
   const label = document.createElement('label');
@@ -20,11 +22,10 @@ async function getName() {
 async function init() {
   await initWasm();
   let name = window.localStorage.getItem('name');
-  if (typeof name !== 'string') {
+  if (!spectatorMode && typeof name !== 'string') {
     name = await getName();
     window.localStorage.setItem('name', name);
   }
-  console.log(`Name: ${name}`);
 
   const textOutput = document.createElement('div');
   textOutput.style.position = 'absolute';

@@ -48,7 +48,7 @@ fn get_websocket_url() -> Result<String, JsValue> {
     return Ok(format!("wss://{}/", hostname));
   }
 
-  if port == "8000" {
+  if port != "" && port != "443" {
     // we're in dev mode, use the dev mode port
     return Ok(format!("ws://{}:3012/", hostname));
   }
@@ -127,7 +127,10 @@ pub fn create_websocket_and_listen(
   let onclose_callback = Closure::wrap(Box::new(move |_| {
     console_log!("websocket closed");
     let mut option_wrapped = game_as_player.lock().unwrap();
-    let game_as_player = option_wrapped.as_mut().unwrap();
+    let game_as_player = match option_wrapped.as_mut() {
+      Some(v) => v,
+      None => return,
+    };
     game_as_player
       .disconnected()
       .expect("Game failed to handle disconnection");
